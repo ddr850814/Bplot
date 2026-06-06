@@ -1,0 +1,158 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|c:\\users\\jiazheng\\\u684C\u9762\\batchplotvb\\plotengine.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
+      "RelativeMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|solutionrelative:plotengine.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\presetconfigform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form",
+      "RelativeMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|solutionrelative:presetconfigform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\selectionform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form",
+      "RelativeMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|solutionrelative:selectionform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\nametemplateform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form",
+      "RelativeMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|solutionrelative:nametemplateform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\multidocform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form",
+      "RelativeMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|solutionrelative:multidocform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\mainform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form",
+      "RelativeMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|solutionrelative:mainform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\contactform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form",
+      "RelativeMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|solutionrelative:contactform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\blockpapersettingsform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form",
+      "RelativeMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|solutionrelative:blockpapersettingsform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}|Form"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\mainform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}",
+      "RelativeMoniker": "D:0:0:{EC2D5983-010D-4276-8120-6CFA2249F7D9}|BatchPlotVB.vbproj|solutionrelative:mainform.vb||{2C015C70-C72C-11D0-88C3-00A0C9110049}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 5,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "MultiDocForm.vb [\u8BBE\u8BA1]",
+              "DocumentMoniker": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\MultiDocForm.vb",
+              "RelativeDocumentMoniker": "MultiDocForm.vb",
+              "ToolTip": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\MultiDocForm.vb [\u8BBE\u8BA1]",
+              "RelativeToolTip": "MultiDocForm.vb [\u8BBE\u8BA1]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2026-06-06T13:35:19.591Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "ContactForm.vb [\u8BBE\u8BA1]",
+              "DocumentMoniker": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\ContactForm.vb",
+              "RelativeDocumentMoniker": "ContactForm.vb",
+              "ToolTip": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\ContactForm.vb [\u8BBE\u8BA1]",
+              "RelativeToolTip": "ContactForm.vb [\u8BBE\u8BA1]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2026-06-06T13:34:52.853Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "MainForm.vb [\u8BBE\u8BA1]",
+              "DocumentMoniker": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\MainForm.vb",
+              "RelativeDocumentMoniker": "MainForm.vb",
+              "ToolTip": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\MainForm.vb [\u8BBE\u8BA1]",
+              "RelativeToolTip": "MainForm.vb [\u8BBE\u8BA1]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2026-06-04T05:29:09.226Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "NameTemplateForm.vb [\u8BBE\u8BA1]",
+              "DocumentMoniker": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\NameTemplateForm.vb",
+              "RelativeDocumentMoniker": "NameTemplateForm.vb",
+              "ToolTip": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\NameTemplateForm.vb [\u8BBE\u8BA1]",
+              "RelativeToolTip": "NameTemplateForm.vb [\u8BBE\u8BA1]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2026-06-04T03:48:55.502Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "PresetConfigForm.vb [\u8BBE\u8BA1]",
+              "DocumentMoniker": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\PresetConfigForm.vb",
+              "RelativeDocumentMoniker": "PresetConfigForm.vb",
+              "ToolTip": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\PresetConfigForm.vb [\u8BBE\u8BA1]",
+              "RelativeToolTip": "PresetConfigForm.vb [\u8BBE\u8BA1]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2026-06-04T05:29:22.447Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "PlotEngine.vb",
+              "DocumentMoniker": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\PlotEngine.vb",
+              "RelativeDocumentMoniker": "PlotEngine.vb",
+              "ToolTip": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\PlotEngine.vb",
+              "RelativeToolTip": "PlotEngine.vb",
+              "ViewState": "AgIAAAEAAAAAAAAAAAAcwCMAAAASAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2026-06-05T00:58:21.247Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "SelectionForm.vb [\u8BBE\u8BA1]",
+              "DocumentMoniker": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\SelectionForm.vb",
+              "RelativeDocumentMoniker": "SelectionForm.vb",
+              "ToolTip": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\SelectionForm.vb [\u8BBE\u8BA1]",
+              "RelativeToolTip": "SelectionForm.vb [\u8BBE\u8BA1]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2026-06-06T13:36:04.468Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "BlockPaperSettingsForm.vb [\u8BBE\u8BA1]",
+              "DocumentMoniker": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\BlockPaperSettingsForm.vb",
+              "RelativeDocumentMoniker": "BlockPaperSettingsForm.vb",
+              "ToolTip": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\BlockPaperSettingsForm.vb [\u8BBE\u8BA1]",
+              "RelativeToolTip": "BlockPaperSettingsForm.vb [\u8BBE\u8BA1]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2026-06-06T13:34:10.129Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "MainForm.vb",
+              "DocumentMoniker": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\MainForm.vb",
+              "RelativeDocumentMoniker": "MainForm.vb",
+              "ToolTip": "C:\\Users\\jiazheng\\\u684C\u9762\\BatchPlotVB\\MainForm.vb",
+              "RelativeToolTip": "MainForm.vb",
+              "ViewState": "AgIAAKQGAAAAAAAAAAAAwLcGAAAQAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003361|",
+              "WhenOpened": "2026-06-05T09:19:44.696Z"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
