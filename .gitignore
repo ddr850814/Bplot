@@ -1,0 +1,13 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Build results
+bin/
+obj/
+
+# AutoCAD references (should be referenced from AutoCAD install path)
+AcCoreMgd.dll
+AcDbMgd.dll
+AcMgd.dll
