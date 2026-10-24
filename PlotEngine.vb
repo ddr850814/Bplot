@@ -36,6 +36,8 @@ Public Class BatchPlotEngine
     End Property
 
     ' 进入外部侧库模式：加载目标文件并切换引擎的检测/打印目标库（失败抛异常由调用方跳过该文件）
+    ' 同步切换 WorkingDatabase：2014 等版本 PlotInfoValidator/PlotEngine 以工作库判断"当前布局"，
+    ' 不切换会对侧库布局报 eLayoutNotCurrent/eInvalidPlotInfo
     Public Sub BeginExternalPlot(filePath As String)
         Dim sideDb As New Database(False, True)
         Try
@@ -48,6 +50,7 @@ Public Class BatchPlotEngine
         _externalName = filePath
         _db = sideDb
         _frameDetector = New FrameDetector(sideDb)
+        HostApplicationServices.WorkingDatabase = sideDb
         _logger.Info($"进入外部侧库打印模式: {filePath}")
     End Sub
 
@@ -66,6 +69,7 @@ Public Class BatchPlotEngine
             _externalName = ""
             _db = _doc.Database
             _frameDetector = New FrameDetector(_db)
+            HostApplicationServices.WorkingDatabase = _doc.Database
             _logger.Info("已退出外部侧库打印模式")
         End If
     End Sub
