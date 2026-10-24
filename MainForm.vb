@@ -2043,9 +2043,6 @@ End Sub
 
 #Region "UI State Save/Load"
 
-    ''' <summary>
-    ''' 保存控件状态到文件
-    ''' </summary>
     ' 读取重名文件处理单选项为引擎枚举值（覆盖/自动顺延/跳过）
     Private Function GetSelectedDuplicateHandling() As BatchPlotEngine.DuplicateFileHandling
         If radSkipName.Checked Then
@@ -2121,6 +2118,9 @@ End Sub
         System.Windows.Forms.Application.DoEvents()
     End Sub
 
+    ''' <summary>
+    ''' 保存控件状态到文件
+    ''' </summary>
     Private Sub SaveUIState()
         Try
             Dim state As New Dictionary(Of String, String)()
@@ -2459,95 +2459,111 @@ End Sub
                 Dim filePath As String = _multiDocFiles(i)
                 Dim fileName As String = Path.GetFileName(filePath)
 
-                ' 打开文件
-                Dim doc As Document = OpenDocument(filePath)
-                If doc Is Nothing Then
-                    Continue For
-                End If
-
-                ' 等待文件完全加载
-                Threading.Thread.Sleep(1000)
-                Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument = doc
-                Threading.Thread.Sleep(500)
-
-                ' 更新PlotEngine的文档引用
-                _plotEngine.UpdateCurrentDocument()
-
-                ' 识别图框
-                Dim blockName As String = txtBlockName.Text.Trim()
-                Dim layerName As String = txtLayerName.Text.Trim()
-
-                ' 如果勾选自动选择，使用通配符匹配所有
-                If chkAutoSelect.Checked Then
-                    blockName = "*"
-                    layerName = "*"
+                ' 打印/打印到文件/已有布局/拆分归档走侧库（不在编辑器打开文档：无激活等待、不残留）；
+                ' 批量生成布局要修改文档本身，保留打开文档方式
+                Dim useSideDb As Boolean = Not radBatchCreateLayout.Checked
+                If useSideDb Then
+                    Try
+                        _plotEngine.BeginExternalPlot(filePath)
+                    Catch exLoad As Exception
+                        Logger.GetInstance().Error($"加载文件失败，跳过: {fileName}", exLoad)
+                        Continue For
+                    End Try
                 Else
-                    ' 只有输入为空时才使用通配符，保留用户输入的默认值
-                    If String.IsNullOrEmpty(blockName) Then
-                        blockName = "*"
+                    Dim doc As Document = OpenDocument(filePath)
+                    If doc Is Nothing Then
+                        Continue For
                     End If
-                    If String.IsNullOrEmpty(layerName) Then
-                        layerName = "*"
-                    End If
+
+                    ' 等待文件完全加载
+                    Threading.Thread.Sleep(1000)
+                    Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument = doc
+                    Threading.Thread.Sleep(500)
+
+                    ' 更新PlotEngine的文档引用
+                    _plotEngine.UpdateCurrentDocument()
                 End If
 
-                Dim frames As List(Of BatchPlotEngine.FrameInfo) = Nothing
-                If radBlock.Checked Then
-                    ' 按图块识别
-                    frames = _plotEngine.DetectFrames(blockName, layerName, settings)
-                ElseIf radPolyline.Checked Then
-                    ' 按多段线识别
-                    frames = _plotEngine.DetectFramesByPolyline(layerName, settings)
-                ElseIf radLine.Checked Then
-                    ' 按直线识别
-                    frames = _plotEngine.DetectFramesByLine(layerName, settings)
-                End If
-
-                If frames Is Nothing OrElse frames.Count = 0 Then
-                    Continue For
-                End If
-
-                ' 打印顺序
-                Dim orderType As BatchPlotEngine.PlotOrderType
-                If radLeftRight.Checked Then
-                    orderType = BatchPlotEngine.PlotOrderType.LeftRight
-                ElseIf radTopBottom.Checked Then
-                    orderType = BatchPlotEngine.PlotOrderType.TopBottom
-                Else
-                    orderType = BatchPlotEngine.PlotOrderType.SelectOrder
-                End If
-                _plotEngine.OrderFrames(frames, orderType, chkReverseOrder.Checked)
-
-                ' 根据输出选项执行对应操作
                 Try
-                    If radDirectPlot.Checked Then
-                        ' 直接批量打印
-                        settings.DirectPrint = True
-                        _plotEngine.ExecuteBatchPlot(frames, settings, progressCallback)
-                    ElseIf radPlotToFile.Checked Then
-                        ' 打印到文件
-                        settings.DirectPrint = False
-                        _plotEngine.ExecuteBatchPlot(frames, settings, progressCallback)
-                    ElseIf radSplitArchive.Checked Then
-                        ' 图纸拆分归档
-                        Dim archivePath As String = GetActualOutputPath()
-                        If String.IsNullOrEmpty(archivePath) Then
-                            archivePath = Path.GetDirectoryName(filePath)
+                    ' 识别图框
+                    Dim blockName As String = txtBlockName.Text.Trim()
+                    Dim layerName As String = txtLayerName.Text.Trim()
+
+                    ' 如果勾选自动选择，使用通配符匹配所有
+                    If chkAutoSelect.Checked Then
+                        blockName = "*"
+                        layerName = "*"
+                    Else
+                        ' 只有输入为空时才使用通配符，保留用户输入的默认值
+                        If String.IsNullOrEmpty(blockName) Then
+                            blockName = "*"
                         End If
-                        Dim dupHandling As BatchPlotEngine.DuplicateFileHandling = GetSelectedDuplicateHandling()
-                        _plotEngine.SplitAndArchive(frames, archivePath, txtNameTemplate.Text, chkUseDWGName.Checked, progressCallback, dupHandling)
-                    ElseIf radBatchCreateLayout.Checked Then
-                        ' 批量生成布局
-                        Dim dupHandling2 As BatchPlotEngine.DuplicateFileHandling = GetSelectedDuplicateHandling()
-                        _plotEngine.BatchCreateLayouts(frames, settings, progressCallback, chkModelSpaceScale.Checked, dupHandling2)
-                    ElseIf radPlotExistingLayout.Checked Then
-                        ' 打印已有布局
-                        settings.DirectPrint = True
-                        _plotEngine.PlotExistingLayouts(settings, progressCallback)
+                        If String.IsNullOrEmpty(layerName) Then
+                            layerName = "*"
+                        End If
                     End If
-                Catch ex As Exception
-                    ' 操作失败，继续下一个文件
-                    Logger.GetInstance().Error($"处理文件 {fileName} 失败", ex)
+
+                    Dim frames As List(Of BatchPlotEngine.FrameInfo) = Nothing
+                    If radBlock.Checked Then
+                        ' 按图块识别
+                        frames = _plotEngine.DetectFrames(blockName, layerName, settings)
+                    ElseIf radPolyline.Checked Then
+                        ' 按多段线识别
+                        frames = _plotEngine.DetectFramesByPolyline(layerName, settings)
+                    ElseIf radLine.Checked Then
+                        ' 按直线识别
+                        frames = _plotEngine.DetectFramesByLine(layerName, settings)
+                    End If
+
+                    If frames Is Nothing OrElse frames.Count = 0 Then
+                        Continue For
+                    End If
+
+                    ' 打印顺序
+                    Dim orderType As BatchPlotEngine.PlotOrderType
+                    If radLeftRight.Checked Then
+                        orderType = BatchPlotEngine.PlotOrderType.LeftRight
+                    ElseIf radTopBottom.Checked Then
+                        orderType = BatchPlotEngine.PlotOrderType.TopBottom
+                    Else
+                        orderType = BatchPlotEngine.PlotOrderType.SelectOrder
+                    End If
+                    _plotEngine.OrderFrames(frames, orderType, chkReverseOrder.Checked)
+
+                    ' 根据输出选项执行对应操作
+                    Try
+                        If radDirectPlot.Checked Then
+                            ' 直接批量打印
+                            settings.DirectPrint = True
+                            _plotEngine.ExecuteBatchPlot(frames, settings, progressCallback)
+                        ElseIf radPlotToFile.Checked Then
+                            ' 打印到文件
+                            settings.DirectPrint = False
+                            _plotEngine.ExecuteBatchPlot(frames, settings, progressCallback)
+                        ElseIf radSplitArchive.Checked Then
+                            ' 图纸拆分归档
+                            Dim archivePath As String = GetActualOutputPath()
+                            If String.IsNullOrEmpty(archivePath) Then
+                                archivePath = Path.GetDirectoryName(filePath)
+                            End If
+                            Dim dupHandling As BatchPlotEngine.DuplicateFileHandling = GetSelectedDuplicateHandling()
+                            _plotEngine.SplitAndArchive(frames, archivePath, txtNameTemplate.Text, chkUseDWGName.Checked, progressCallback, dupHandling)
+                        ElseIf radBatchCreateLayout.Checked Then
+                            ' 批量生成布局
+                            Dim dupHandling2 As BatchPlotEngine.DuplicateFileHandling = GetSelectedDuplicateHandling()
+                            _plotEngine.BatchCreateLayouts(frames, settings, progressCallback, chkModelSpaceScale.Checked, dupHandling2)
+                        ElseIf radPlotExistingLayout.Checked Then
+                            ' 打印已有布局
+                            settings.DirectPrint = True
+                            _plotEngine.PlotExistingLayouts(settings, progressCallback)
+                        End If
+                    Catch ex As Exception
+                        ' 操作失败，继续下一个文件
+                        Logger.GetInstance().Error($"处理文件 {fileName} 失败", ex)
+                    End Try
+                Finally
+                    ' 侧库模式处理完单个文件后恢复引擎文档引用
+                    If useSideDb Then _plotEngine.EndExternalPlot()
                 End Try
 
                 ' 更新进度
@@ -2587,8 +2603,13 @@ End Sub
                 End If
             Next
 
-            ' 打开新文件
-            Return docMgr.Open(filePath, False)
+            ' DocumentCollection.Open 为 2015+ 托管 API；旧版（如 2014）无此成员，反射调用保持全版本可编译
+            Dim openMethod = GetType(DocumentCollection).GetMethod("Open", New Type() {GetType(String), GetType(Boolean)})
+            If openMethod Is Nothing Then
+                Debug.WriteLine("当前 CAD 版本不支持托管方式打开文档")
+                Return Nothing
+            End If
+            Return CType(openMethod.Invoke(docMgr, New Object() {filePath, False}), Document)
         Catch ex As Exception
             Debug.WriteLine($"打开文档失败: {ex.Message}")
             Return Nothing

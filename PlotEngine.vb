@@ -23,6 +23,75 @@ Public Class BatchPlotEngine
     ' 用户取消标志：UI 置 True 后，打印循环在当前任务完成后停止；UI 在每次启动新任务前重置
     Public Property CancellationPending As Boolean
 
+    ' ========== 外部文件侧库打印模式 ==========
+    ' 多文档打印时以 ReadDwgFile 侧库代替在编辑器中打开文档：无激活等待、不残留打开的文档
+    Private _externalDb As Database = Nothing
+    Private _externalName As String = ""
+
+    ' 是否处于外部侧库打印模式（目标库为 ReadDwgFile 加载的文件，而非当前文档）
+    Public ReadOnly Property IsExternalPlotMode As Boolean
+        Get
+            Return _externalDb IsNot Nothing
+        End Get
+    End Property
+
+    ' 进入外部侧库模式：加载目标文件并切换引擎的检测/打印目标库（失败抛异常由调用方跳过该文件）
+    Public Sub BeginExternalPlot(filePath As String)
+        Dim sideDb As New Database(False, True)
+        Try
+            sideDb.ReadDwgFile(filePath, FileShare.Read, True, "")
+        Catch
+            sideDb.Dispose()
+            Throw
+        End Try
+        _externalDb = sideDb
+        _externalName = filePath
+        _db = sideDb
+        _frameDetector = New FrameDetector(sideDb)
+        _logger.Info($"进入外部侧库打印模式: {filePath}")
+    End Sub
+
+    ' 退出外部侧库模式：释放侧库并恢复当前文档引用
+    Public Sub EndExternalPlot()
+        If _externalDb IsNot Nothing Then
+            Try
+                _externalDb.CloseInput(True)
+            Catch
+            End Try
+            Try
+                _externalDb.Dispose()
+            Catch
+            End Try
+            _externalDb = Nothing
+            _externalName = ""
+            _db = _doc.Database
+            _frameDetector = New FrameDetector(_db)
+            _logger.Info("已退出外部侧库打印模式")
+        End If
+    End Sub
+
+    ' 命名源文件路径：侧库模式返回外部文件路径，否则返回当前文档路径
+    Private Function SourceDrawingPath() As String
+        Return If(IsExternalPlotMode, _externalName, _doc.Name)
+    End Function
+
+    ' 按布局名在指定库的布局字典中查找布局 ObjectId（侧库模式无 LayoutManager 可用）
+    ' 与检测端 GetLayoutSpaceId/排序端 TryReadLayoutTabOrders 一致：比较 Layout.LayoutName 而非字典键，
+    ' 兼容个别图纸中字典键名与布局名不一致的情况；模型空间布局名固定为 "Model"，两侧一致
+    Private Function FindLayoutIdInDb(db As Database, layoutName As String) As ObjectId
+        Using tr As Transaction = db.TransactionManager.StartTransaction()
+            Dim layoutDict = CType(tr.GetObject(db.LayoutDictionaryId, OpenMode.ForRead), DBDictionary)
+            For Each entry As DBDictionaryEntry In layoutDict
+                Dim layout = TryCast(tr.GetObject(entry.Value, OpenMode.ForRead), Layout)
+                If layout IsNot Nothing AndAlso String.Equals(layout.LayoutName, layoutName, StringComparison.OrdinalIgnoreCase) Then
+                    Return entry.Value
+                End If
+            Next
+            tr.Commit()
+        End Using
+        Return ObjectId.Null
+    End Function
+
     Public Sub New()
         _logger = Logger.GetInstance()
         _configManager = New ConfigManager()
@@ -598,7 +667,7 @@ Public Class BatchPlotEngine
                 ' 打印到文件模式才需要准备输出路径
                 outputPath = settings.OutputPath
                 If String.IsNullOrEmpty(outputPath) Then
-                    outputPath = Path.GetDirectoryName(_doc.Name)
+                    outputPath = Path.GetDirectoryName(SourceDrawingPath())
                 End If
                 If Not Directory.Exists(outputPath) Then
                     Directory.CreateDirectory(outputPath)
@@ -607,7 +676,7 @@ Public Class BatchPlotEngine
                 ' 根据设置生成文件名
                 If settings.UseDWGName OrElse settings.NameTemplate = "<DWGNAME>" Then
                     ' 使用DWG文件名
-                    outputFileName = Path.GetFileNameWithoutExtension(_doc.Name)
+                    outputFileName = Path.GetFileNameWithoutExtension(SourceDrawingPath())
                 ElseIf Not String.IsNullOrEmpty(settings.NameTemplate) Then
                     ' 使用名称样板（在循环中会替换 <CTAB> 和 <INDEX>）
                     outputFileName = settings.NameTemplate
@@ -792,16 +861,29 @@ Public Class BatchPlotEngine
             End If
 
             ' 使用PlotEngine进行后台打印
-            Using lock As DocumentLock = _doc.LockDocument()
+            Dim docLock As DocumentLock = Nothing
+            Try
+                ' 侧库模式目标库不是文档，无需文档锁
+                If Not IsExternalPlotMode Then docLock = _doc.LockDocument()
                 Using tr As Transaction = _db.TransactionManager.StartTransaction()
-                    Dim layoutMgr As LayoutManager = LayoutManager.Current
-                    ' 使用图框所在的布局
-                    Dim layoutId As ObjectId = layoutMgr.GetLayoutId(frame.LayoutName)
+                    ' 侧库模式无 LayoutManager：按布局名查布局字典
+                    Dim layoutMgr As LayoutManager = Nothing
+                    Dim layoutId As ObjectId
+                    If IsExternalPlotMode Then
+                        layoutId = FindLayoutIdInDb(_db, frame.LayoutName)
+                        If layoutId.IsNull Then
+                            Throw New Exception($"侧库中找不到布局: {frame.LayoutName}")
+                        End If
+                    Else
+                        layoutMgr = LayoutManager.Current
+                        ' 使用图框所在的布局
+                        layoutId = layoutMgr.GetLayoutId(frame.LayoutName)
+                    End If
                     Dim layout = CType(tr.GetObject(layoutId, OpenMode.ForRead), Layout)
                     Dim layoutName As String = layout.LayoutName
 
-                    ' 切换到图框所在的布局，否则PlotInfoValidator会报eInvalidPlotInfo
-                    If layoutMgr.CurrentLayout <> layoutName Then
+                    ' 切换到图框所在的布局，否则PlotInfoValidator会报eInvalidPlotInfo（侧库无编辑器，跳过切换）
+                    If layoutMgr IsNot Nothing AndAlso layoutMgr.CurrentLayout <> layoutName Then
                         layoutMgr.CurrentLayout = layoutName
                     End If
 
@@ -833,12 +915,12 @@ Public Class BatchPlotEngine
 
                     tr.Commit()
                 End Using
-            End Using
+            Finally
+                docLock?.Dispose()
+            End Try
 
-            ' 打印到文件时校验输出文件已真实生成（BACKGROUNDPLOT=0 保证同步落盘）
-            If Not String.IsNullOrEmpty(outputFilePath) AndAlso Not File.Exists(outputFilePath) Then
-                Throw New Exception($"打印任务已执行但未找到输出文件: {outputFilePath}")
-            End If
+            ' 打印到文件时校验输出已真实生成且格式有效（BACKGROUNDPLOT=0 保证同步落盘）
+            ValidatePlotOutputFile(outputFilePath)
 
             _logger.Info($"图框 {frame.FrameNumber} 第{currentCopy}/{totalCopies}份: 打印完成")
 
@@ -985,6 +1067,120 @@ Public Class BatchPlotEngine
 
 #End Region
 
+#Region "DCS Window Transform & Output Validation"
+
+    ' 打印窗口 DCS 变换（借鉴 LA 批量打印 CoordinateUtils.BuildWcsToDcsMatrix，等价 acedTrans(0,2)）：
+    ' SetPlotWindowArea 的窗口坐标按视口 DCS 解释。图纸空间 DCS=WCS 返回原值；
+    ' 模型空间视图有扭转（ViewTwist<>0，常见于沿旋转 UCS 作图）时，四角经 WCS→DCS 变换后取一次包围盒，
+    ' 避免按 WCS 坐标打偏窗口；视图无扭转时保持既有 WCS 坐标行为不变。侧库模式无活动视口，同样返回原值。
+    Private Function PlotWindowInDcs(bounds As Extents3d) As Extents2d
+        Dim wcsArea As New Extents2d(bounds.MinPoint.X, bounds.MinPoint.Y, bounds.MaxPoint.X, bounds.MaxPoint.Y)
+        Try
+            If IsExternalPlotMode OrElse _doc Is Nothing Then Return wcsArea
+            ' 图纸空间 DCS=WCS，无视图旋转
+            If Not _doc.Database.TILEMODE Then Return wcsArea
+
+            Dim view As ViewTableRecord = _doc.Editor.GetCurrentView()
+            ' 视图无扭转：保持既有 WCS 坐标行为，零回归风险
+            If Math.Abs(view.ViewTwist) < 0.0001 Then Return wcsArea
+
+            ' DCS→WCS：PlaneToWorld × Displacement × Rotation（LA 逐字一致的乘法顺序），取逆得 WCS→DCS
+            Dim dcsToWcs As Matrix3d = Matrix3d.Rotation(-view.ViewTwist, view.ViewDirection, view.Target) *
+                Matrix3d.Displacement(view.Target - Point3d.Origin) *
+                Matrix3d.PlaneToWorld(view.ViewDirection)
+            Dim wcsToDcs As Matrix3d = dcsToWcs.Inverse()
+
+            Dim corners As Point3d() = {
+                New Point3d(bounds.MinPoint.X, bounds.MinPoint.Y, 0).TransformBy(wcsToDcs),
+                New Point3d(bounds.MaxPoint.X, bounds.MinPoint.Y, 0).TransformBy(wcsToDcs),
+                New Point3d(bounds.MinPoint.X, bounds.MaxPoint.Y, 0).TransformBy(wcsToDcs),
+                New Point3d(bounds.MaxPoint.X, bounds.MaxPoint.Y, 0).TransformBy(wcsToDcs)}
+
+            Return New Extents2d(corners.Min(Function(p) p.X), corners.Min(Function(p) p.Y),
+                                 corners.Max(Function(p) p.X), corners.Max(Function(p) p.Y))
+        Catch ex As Exception
+            _logger.Warning($"打印窗口 DCS 变换失败，使用 WCS 坐标: {ex.Message}")
+            Return wcsArea
+        End Try
+    End Function
+
+    ' 校验打印输出文件（借鉴 LA 批量打印 ValidatePlotOutput）：存在、非空、扩展名对应格式签名匹配，
+    ' PDF 另验 %%EOF 结束标记。防止"打印已执行但文件为空/半截"被误判成功
+    Private Sub ValidatePlotOutputFile(outputFilePath As String)
+        If String.IsNullOrEmpty(outputFilePath) Then Return
+
+        If Not File.Exists(outputFilePath) Then
+            Throw New Exception($"打印任务已执行但未找到输出文件: {outputFilePath}")
+        End If
+
+        Dim info As New FileInfo(outputFilePath)
+        If info.Length = 0 Then
+            Throw New Exception($"输出文件为空: {outputFilePath}")
+        End If
+
+        Dim ext As String = info.Extension.ToLowerInvariant()
+        If ext = ".plt" OrElse ext = "" Then Return ' HPGL 文本/无扩展名仅做非空校验
+
+        Try
+            Using fs As FileStream = File.OpenRead(outputFilePath)
+                Dim head(15) As Byte
+                Dim n As Integer = fs.Read(head, 0, head.Length)
+
+                If Not OutputSignatureOk(ext, head, n) Then
+                    Throw New Exception($"输出文件格式签名不匹配（可能未完整生成）: {outputFilePath}")
+                End If
+
+                If ext = ".pdf" Then
+                    ' PDF 完整写入以 %%EOF 结尾
+                    Dim tailLen As Integer = CInt(Math.Min(1024, fs.Length))
+                    Dim tail(tailLen - 1) As Byte
+                    fs.Seek(-tailLen, SeekOrigin.End)
+                    Dim m As Integer = fs.Read(tail, 0, tailLen)
+                    Dim tailText As String = System.Text.Encoding.ASCII.GetString(tail, 0, m)
+                    If Not tailText.Contains("%%EOF") Then
+                        Throw New Exception($"PDF 输出缺少 %%EOF 结束标记（可能未完整生成）: {outputFilePath}")
+                    End If
+                End If
+            End Using
+        Catch exIO As IOException
+            ' 文件被占用等 IO 问题不阻断：已确认存在且非空
+            _logger.Warning($"校验输出文件时读取失败（跳过深度校验）: {outputFilePath}, {exIO.Message}")
+        End Try
+    End Sub
+
+    ' 按扩展名校验文件头签名：PNG/JPG/BMP/TIFF/PDF/DWF/DWFx
+    Private Function OutputSignatureOk(ext As String, head As Byte(), len As Integer) As Boolean
+        Select Case ext
+            Case ".png"
+                Return HeadStartsWith(head, len, New Byte() {&H89, &H50, &H4E, &H47, &HD, &HA, &H1A, &HA})
+            Case ".jpg", ".jpeg"
+                Return HeadStartsWith(head, len, New Byte() {&HFF, &HD8, &HFF})
+            Case ".bmp"
+                Return HeadStartsWith(head, len, New Byte() {&H42, &H4D})
+            Case ".tif", ".tiff"
+                Return HeadStartsWith(head, len, New Byte() {&H49, &H49, &H2A, &H0}) OrElse
+                       HeadStartsWith(head, len, New Byte() {&H4D, &H4D, &H0, &H2A})
+            Case ".pdf"
+                Return HeadStartsWith(head, len, New Byte() {&H25, &H50, &H44, &H46}) ' %PDF
+            Case ".dwf"
+                Return HeadStartsWith(head, len, New Byte() {&H28, &H30, &H46, &HD, &HA}) ' (0F CR LF
+            Case ".dwfx"
+                Return HeadStartsWith(head, len, New Byte() {&H50, &H4B}) ' PK（OPC zip 包）
+            Case Else
+                Return True ' 未知格式仅做非空校验
+        End Select
+    End Function
+
+    Private Function HeadStartsWith(head As Byte(), len As Integer, sig As Byte()) As Boolean
+        If len < sig.Length Then Return False
+        For i = 0 To sig.Length - 1
+            If head(i) <> sig(i) Then Return False
+        Next
+        Return True
+    End Function
+
+#End Region
+
 #Region "Preview"
 
     ' 预览打印
@@ -995,7 +1191,7 @@ Public Class BatchPlotEngine
                     Dim layoutMgr As LayoutManager = LayoutManager.Current
                     ' 使用图框所在的布局，而不是当前布局
                     Dim layoutId As ObjectId = layoutMgr.GetLayoutId(frame.LayoutName)
-                    Dim layout = CType(tr.GetObject(layoutId, OpenMode.ForWrite), Layout)
+                    Dim layout = CType(tr.GetObject(layoutId, OpenMode.ForRead), Layout)
                     Dim layoutName As String = layout.LayoutName
 
                     ' 切换到图框所在的布局，否则PlotInfoValidator会报eInvalidPlotInfo
@@ -1034,17 +1230,37 @@ Public Class BatchPlotEngine
                         End Try
                     End Using
 
-                    ' 执行预览 - 在事务内执行
+                    ' 执行预览 - 在事务内执行（异常时逐级清理引擎状态）
                     Using pe As PlotEngine = PlotFactory.CreatePreviewEngine(CInt(PreviewEngineFlags.Plot))
-                        pe.BeginPlot(Nothing, Nothing)
-                        pe.BeginDocument(pi, layoutName, Nothing, 1, False, Nothing)
-                        Dim pageInfo As New PlotPageInfo()
-                        pe.BeginPage(pageInfo, pi, True, Nothing)
-                        pe.BeginGenerateGraphics(Nothing)
-                        pe.EndGenerateGraphics(Nothing)
-                        pe.EndPage(Nothing)
-                        pe.EndDocument(Nothing)
-                        pe.EndPlot(Nothing)
+                        Dim plotStarted As Boolean = False
+                        Dim documentStarted As Boolean = False
+                        Dim pageStarted As Boolean = False
+                        Dim graphicsStarted As Boolean = False
+                        Try
+                            pe.BeginPlot(Nothing, Nothing)
+                            plotStarted = True
+                            pe.BeginDocument(pi, layoutName, Nothing, 1, False, Nothing)
+                            documentStarted = True
+                            Dim pageInfo As New PlotPageInfo()
+                            pe.BeginPage(pageInfo, pi, True, Nothing)
+                            pageStarted = True
+                            pe.BeginGenerateGraphics(Nothing)
+                            graphicsStarted = True
+                            pe.EndGenerateGraphics(Nothing)
+                            graphicsStarted = False
+                            pe.EndPage(Nothing)
+                            pageStarted = False
+                            pe.EndDocument(Nothing)
+                            documentStarted = False
+                            pe.EndPlot(Nothing)
+                            plotStarted = False
+                        Finally
+                            ' 与 RunPlotEngineSafely 相同的级联收尾，防止异常残留引擎状态
+                            If graphicsStarted Then Try : pe.EndGenerateGraphics(Nothing) : Catch : End Try
+                            If pageStarted Then Try : pe.EndPage(Nothing) : Catch : End Try
+                            If documentStarted Then Try : pe.EndDocument(Nothing) : Catch : End Try
+                            If plotStarted Then Try : pe.EndPlot(Nothing) : Catch : End Try
+                        End Try
                     End Using
 
                     ps.Dispose()
@@ -1064,7 +1280,7 @@ Public Class BatchPlotEngine
 
         ' 先设置打印类型和窗口区域
         Try
-            Dim windowArea As New Extents2d(frame.Bounds.MinPoint.X, frame.Bounds.MinPoint.Y, frame.Bounds.MaxPoint.X, frame.Bounds.MaxPoint.Y)
+            Dim windowArea As Extents2d = PlotWindowInDcs(frame.Bounds)
             psv.SetPlotWindowArea(plotSettings, windowArea)
             psv.SetPlotType(plotSettings, Autodesk.AutoCAD.DatabaseServices.PlotType.Window)
         Catch ex As Exception
@@ -1101,7 +1317,7 @@ Public Class BatchPlotEngine
         ' 重新设置打印类型为窗口（SetPlotConfigurationName可能会重置它）
         Try
             psv.SetPlotType(plotSettings, Autodesk.AutoCAD.DatabaseServices.PlotType.Window)
-            Dim windowArea As New Extents2d(frame.Bounds.MinPoint.X, frame.Bounds.MinPoint.Y, frame.Bounds.MaxPoint.X, frame.Bounds.MaxPoint.Y)
+            Dim windowArea As Extents2d = PlotWindowInDcs(frame.Bounds)
             psv.SetPlotWindowArea(plotSettings, windowArea)
         Catch ex As Exception
             _logger.Warning("重新设置打印窗口失败: " & ex.Message)
@@ -1396,7 +1612,7 @@ Public Class BatchPlotEngine
                 count += 1
                 progressCallback?.Invoke(CInt((count / total) * 100), $"正在拆分: {frame.FrameNumber}")
 
-                Dim fileName As String = If(useDWGName, Path.GetFileNameWithoutExtension(_doc.Name), FormatFileName(nameTemplate, frame.FrameNumber, count, frame))
+                Dim fileName As String = If(useDWGName, Path.GetFileNameWithoutExtension(SourceDrawingPath()), FormatFileName(nameTemplate, frame.FrameNumber, count, frame))
                 Dim outputFile As String = Path.Combine(outputPath, $"{fileName}.dwg")
                 outputFile = HandleDuplicateFile(outputFile, duplicateHandling)
 
@@ -1431,11 +1647,12 @@ Public Class BatchPlotEngine
     ''' 整库克隆后删除图框外对象并另存（保留穿框图元与完整图纸结构）
     ''' </summary>
     Private Sub CreateSplitFile(frame As FrameInfo, outputFile As String)
-        ' 锁定文档
-        Using docLock As DocumentLock = _doc.LockDocument()
-            ' 克隆整个数据库（空集合 = 整库克隆），不改动当前文档
-            Dim emptyIds As New ObjectIdCollection()
-            Using sideDb As Database = _db.Wblock(emptyIds, Point3d.Origin)
+        Dim docLock As DocumentLock = Nothing
+        Try
+            ' 侧库模式目标库不是文档，无需文档锁
+            If Not IsExternalPlotMode Then docLock = _doc.LockDocument()
+            ' 整库克隆必须用无参 Wblock()：Wblock(空集合, 原点) 只克隆给定对象，空集合会得到空库（此前拆分恒为空图）
+            Using sideDb As Database = _db.Wblock()
 
                 ' 确定要拆分的空间（按图框所在布局，找不到时回退模型空间）
                 Dim spaceId As ObjectId = GetSplitSpaceId(sideDb, frame)
@@ -1509,7 +1726,9 @@ Public Class BatchPlotEngine
                 ' 保存拆分结果（使用源文件版本）
                 sideDb.SaveAs(outputFile, _db.OriginalFileVersion)
             End Using
-        End Using
+        Finally
+            docLock?.Dispose()
+        End Try
     End Sub
 
     ''' <summary>
@@ -2131,17 +2350,25 @@ Public Class BatchPlotEngine
                 End If
             End If
 
-            Using lock As DocumentLock = _doc.LockDocument()
+            Dim docLock As DocumentLock = Nothing
+            Try
+                ' 侧库模式目标库不是文档，无需文档锁
+                If Not IsExternalPlotMode Then docLock = _doc.LockDocument()
                 Using tr As Transaction = _db.TransactionManager.StartTransaction()
-                    Dim layoutMgr As LayoutManager = LayoutManager.Current
-                    Dim layoutId As ObjectId = layoutMgr.GetLayoutId(layoutName)
+                    ' 侧库模式按布局名查布局字典（无 LayoutManager）
+                    Dim layoutId As ObjectId
+                    If IsExternalPlotMode Then
+                        layoutId = FindLayoutIdInDb(_db, layoutName)
+                    Else
+                        layoutId = LayoutManager.Current.GetLayoutId(layoutName)
+                    End If
 
                     If layoutId.IsNull Then
                         Throw New Exception($"找不到布局: {layoutName}")
                     End If
 
-                    ' 设置为当前布局
-                    layoutMgr.CurrentLayout = layoutName
+                    ' 设置为当前布局（侧库无编辑器，跳过切换）
+                    If Not IsExternalPlotMode Then LayoutManager.Current.CurrentLayout = layoutName
                     Dim layout = CType(tr.GetObject(layoutId, OpenMode.ForRead), Layout)
 
                     _logger.Info($"使用布局 '{layoutName}' 的原有设置: 打印机={layout.PlotConfigurationName}, 纸张={layout.CanonicalMediaName}, 打印样式={layout.CurrentStyleSheet}")
@@ -2224,7 +2451,9 @@ Public Class BatchPlotEngine
                     pi.Dispose()
                     tr.Commit()
                 End Using
-            End Using
+            Finally
+                docLock?.Dispose()
+            End Try
 
             _logger.Info($"布局 {layoutName} 第{currentCopy}/{totalCopies}份: 打印完成")
 
@@ -2471,8 +2700,8 @@ Public Class BatchPlotEngine
         Dim fallbackName As String = If(String.IsNullOrWhiteSpace(frameNumber), $"图纸_{index:D3}", frameNumber)
         Try
             Dim result As String = template
-            result = result.Replace("<DWGNAME>", Path.GetFileNameWithoutExtension(_doc.Name))
-            result = result.Replace("<DWGFOLDERNAME>", Path.GetFileName(Path.GetDirectoryName(_doc.Name)))
+            result = result.Replace("<DWGNAME>", Path.GetFileNameWithoutExtension(SourceDrawingPath()))
+            result = result.Replace("<DWGFOLDERNAME>", Path.GetFileName(Path.GetDirectoryName(SourceDrawingPath())))
             result = result.Replace("<CTAB>", frameNumber)
             result = result.Replace("<PAPERNAME>", ResolvePaperName(frame, paperName))
             result = result.Replace("<INDEX>", index.ToString("D3"))
@@ -3168,10 +3397,13 @@ Public Class BatchPlotEngine
                         End Using
                     End Using
 
-                    ' 验证文件是否生成
-                    If File.Exists(imgPath) Then
+                    ' 验证文件已生成且 PNG 签名有效（失败按该帧失败处理，不中断其余帧）
+                    Try
+                        ValidatePlotOutputFile(imgPath)
                         success = True
-                    End If
+                    Catch
+                        success = False
+                    End Try
 
                 Catch ex As Exception
                     _logger.Warning($"渲染图框 {frame.FrameNumber} 为图片失败: {ex.Message}")
