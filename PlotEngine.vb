@@ -412,6 +412,19 @@ Public Class BatchPlotEngine
         Return String.Empty
     End Function
 
+    ' 设备是否只能输出到文件（MustPlotToFile，如 DWG To PDF.pc3）：直打出纸会弹文件对话框或失败。
+    ' 依据驱动声明的能力判别（PlotToFileCapability），不靠设备名猜测；判别失败不阻断（返回 False）
+    Public Function IsFileOnlyDevice(deviceName As String) As Boolean
+        If String.IsNullOrEmpty(deviceName) Then Return False
+        Try
+            PlotConfigManager.SetCurrentConfig(deviceName)
+            Return PlotConfigManager.CurrentConfig.PlotToFileCapability = PlotToFileCapability.MustPlotToFile
+        Catch ex As Exception
+            _logger.Warning($"判别设备出纸能力失败: {deviceName}, {ex.Message}")
+            Return False
+        End Try
+    End Function
+
     ' 获取打印机列表
     Public Function GetPlotterList() As List(Of String)
         Dim plotters As New List(Of String)()

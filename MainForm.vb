@@ -1910,6 +1910,8 @@ End Sub
                     MessageBox.Show("请先选择要处理的图纸", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
                     Return
                 End If
+                ' 出纸防呆：只能出文件的设备直打会弹文件对话框/失败
+                If Not EnsureDeviceCanPrintToPaper() Then Return
                 ' 设置直接打印模式
                 settings.DirectPrint = True
                 ShowPlotProgress("正在批量打印...")
@@ -1980,7 +1982,8 @@ End Sub
                 Me.TopMost = True
 
             ElseIf radPlotExistingLayout.Checked Then
-                ' 打印已有布局
+                ' 打印已有布局（该模式恒定直打；用户所选设备与布局不同时会覆盖到布局）
+                If Not EnsureDeviceCanPrintToPaper() Then Return
                 ShowPlotProgress("正在打印已有布局...")
                 Try
                     _plotEngine.PlotExistingLayouts(settings, progressCallback)
@@ -2042,6 +2045,29 @@ End Sub
     End Function
 
 #Region "UI State Save/Load"
+
+    ' 直打出纸前的设备防呆：只能出文件的设备（DWG To PDF 等）直打会弹文件对话框或失败。
+    ' 按驱动声明能力判别（引擎 IsFileOnlyDevice），不猜设备名；返回 True 表示可继续
+    Private Function EnsureDeviceCanPrintToPaper() As Boolean
+        Try
+            Dim dev As String = ""
+            If cmbPlotDevice.SelectedItem IsNot Nothing Then
+                dev = cmbPlotDevice.SelectedItem.ToString()
+            End If
+            If String.IsNullOrEmpty(dev) OrElse dev = "无" Then Return True ' 未选设备交给后续校验
+            If _plotEngine IsNot Nothing AndAlso _plotEngine.IsFileOnlyDevice(dev) Then
+                Me.TopMost = False
+                MessageBox.Show($"打印设备 '{dev}' 只能输出到文件（如 PDF/PNG），无法直接打印出纸。" & vbCrLf &
+                                "请改选物理打印机，或改用『打印到文件』模式。", "设备不支持出纸",
+                                MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Me.TopMost = True
+                Return False
+            End If
+        Catch
+            ' 判别流程异常不阻断打印主流程
+        End Try
+        Return True
+    End Function
 
     ' 读取重名文件处理单选项为引擎枚举值（覆盖/自动顺延/跳过）
     Private Function GetSelectedDuplicateHandling() As BatchPlotEngine.DuplicateFileHandling
@@ -2445,6 +2471,9 @@ End Sub
                 Sub(progress, message)
                     UpdatePlotProgress(progress, message)
                 End Sub
+
+            ' 出纸防呆：直接打印/已有布局两种模式恒定直打，入口统一检查
+            If (radDirectPlot.Checked OrElse radPlotExistingLayout.Checked) AndAlso Not EnsureDeviceCanPrintToPaper() Then Return
 
             ' 遍历每个文件执行打印（整个过程共用一个进度窗，可在窗口中取消）
             Dim totalFiles As Integer = _multiDocFiles.Count
