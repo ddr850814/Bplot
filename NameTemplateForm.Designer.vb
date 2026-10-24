@@ -13,8 +13,6 @@ Partial Class NameTemplateForm
     Friend WithEvents radAutoIndex As RadioButton
     Friend WithEvents radBlockAttr As RadioButton
     Friend WithEvents radLayerText As RadioButton
-    Friend WithEvents txtBlockAttr As TextBox
-    Friend WithEvents txtLayerText As TextBox
     Friend WithEvents btnOK As Button
     Friend WithEvents btnCancel As Button
 
@@ -27,8 +25,6 @@ Partial Class NameTemplateForm
         Me.radAutoIndex = New System.Windows.Forms.RadioButton()
         Me.radBlockAttr = New System.Windows.Forms.RadioButton()
         Me.radLayerText = New System.Windows.Forms.RadioButton()
-        Me.txtBlockAttr = New System.Windows.Forms.TextBox()
-        Me.txtLayerText = New System.Windows.Forms.TextBox()
         Me.btnOK = New System.Windows.Forms.Button()
         Me.btnCancel = New System.Windows.Forms.Button()
         Me.grpOptions.SuspendLayout
@@ -43,11 +39,9 @@ Partial Class NameTemplateForm
         Me.grpOptions.Controls.Add(Me.radAutoIndex)
         Me.grpOptions.Controls.Add(Me.radBlockAttr)
         Me.grpOptions.Controls.Add(Me.radLayerText)
-        Me.grpOptions.Controls.Add(Me.txtBlockAttr)
-        Me.grpOptions.Controls.Add(Me.txtLayerText)
         Me.grpOptions.Location = New System.Drawing.Point(12, 12)
         Me.grpOptions.Name = "grpOptions"
-        Me.grpOptions.Size = New System.Drawing.Size(340, 200)
+        Me.grpOptions.Size = New System.Drawing.Size(215, 202)
         Me.grpOptions.TabIndex = 0
         Me.grpOptions.TabStop = false
         Me.grpOptions.Text = "选项"
@@ -120,31 +114,13 @@ Partial Class NameTemplateForm
         Me.radLayerText.Location = New System.Drawing.Point(15, 175)
         Me.radLayerText.Name = "radLayerText"
         Me.radLayerText.Size = New System.Drawing.Size(143, 16)
-        Me.radLayerText.TabIndex = 7
+        Me.radLayerText.TabIndex = 6
         Me.radLayerText.Text = "指定图层上的特定文字"
         Me.radLayerText.UseVisualStyleBackColor = true
         '
-        'txtBlockAttr
-        '
-        Me.txtBlockAttr.Enabled = false
-        Me.txtBlockAttr.Location = New System.Drawing.Point(164, 148)
-        Me.txtBlockAttr.Name = "txtBlockAttr"
-        Me.txtBlockAttr.Size = New System.Drawing.Size(170, 21)
-        Me.txtBlockAttr.TabIndex = 6
-        Me.txtBlockAttr.Text = "<BLOCKATTR:图框:图号>"
-        '
-        'txtLayerText
-        '
-        Me.txtLayerText.Enabled = false
-        Me.txtLayerText.Location = New System.Drawing.Point(164, 173)
-        Me.txtLayerText.Name = "txtLayerText"
-        Me.txtLayerText.Size = New System.Drawing.Size(170, 21)
-        Me.txtLayerText.TabIndex = 8
-        Me.txtLayerText.Text = "<LAYERTEXT:图号层>"
-        '
         'btnOK
         '
-        Me.btnOK.Location = New System.Drawing.Point(100, 224)
+        Me.btnOK.Location = New System.Drawing.Point(32, 231)
         Me.btnOK.Name = "btnOK"
         Me.btnOK.Size = New System.Drawing.Size(75, 25)
         Me.btnOK.TabIndex = 1
@@ -153,7 +129,7 @@ Partial Class NameTemplateForm
         '
         'btnCancel
         '
-        Me.btnCancel.Location = New System.Drawing.Point(200, 224)
+        Me.btnCancel.Location = New System.Drawing.Point(132, 231)
         Me.btnCancel.Name = "btnCancel"
         Me.btnCancel.Size = New System.Drawing.Size(75, 25)
         Me.btnCancel.TabIndex = 2
@@ -164,7 +140,7 @@ Partial Class NameTemplateForm
         '
         Me.AutoScaleDimensions = New System.Drawing.SizeF(6!, 12!)
         Me.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font
-        Me.ClientSize = New System.Drawing.Size(364, 260)
+        Me.ClientSize = New System.Drawing.Size(238, 270)
         Me.Controls.Add(Me.btnCancel)
         Me.Controls.Add(Me.btnOK)
         Me.Controls.Add(Me.grpOptions)
@@ -174,8 +150,8 @@ Partial Class NameTemplateForm
         Me.Name = "NameTemplateForm"
         Me.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent
         Me.Text = "名称模板"
-        Me.TopMost = True
-        Me.grpOptions.ResumeLayout(False)
+        Me.TopMost = true
+        Me.grpOptions.ResumeLayout(false)
         Me.grpOptions.PerformLayout
         Me.ResumeLayout(false)
 

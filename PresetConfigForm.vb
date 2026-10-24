@@ -1,7 +1,4 @@
 Imports System.Windows.Forms
-Imports System.Drawing
-Imports System.IO
-Imports System.Collections.Generic
 
 Public Class PresetConfigForm
     Inherits Form
@@ -38,6 +35,7 @@ Public Class PresetConfigForm
     Private _presets As List(Of PresetInfo)
     Private _isEditing As Boolean = False
     Private _originalName As String = ""
+    Private _hasChanges As Boolean = False
 
     Public Class PresetInfo
         Public Property Name As String
@@ -66,190 +64,190 @@ Public Class PresetConfigForm
     End Sub
 
     Private Sub InitializeComponent()
-        Me.lblName = New System.Windows.Forms.Label()
-        Me.txtName = New System.Windows.Forms.TextBox()
-        Me.lblPlotDevice = New System.Windows.Forms.Label()
-        Me.cmbPlotDevice = New System.Windows.Forms.ComboBox()
-        Me.lblPaperSize = New System.Windows.Forms.Label()
-        Me.cmbPaperSize = New System.Windows.Forms.ComboBox()
-        Me.lblPlotStyle = New System.Windows.Forms.Label()
-        Me.cmbPlotStyle = New System.Windows.Forms.ComboBox()
-        Me.btnAdd = New System.Windows.Forms.Button()
-        Me.btnModify = New System.Windows.Forms.Button()
-        Me.btnRemove = New System.Windows.Forms.Button()
-        Me.lstPresets = New System.Windows.Forms.ListView()
-        Me.colName = CType(New System.Windows.Forms.ColumnHeader(),System.Windows.Forms.ColumnHeader)
-        Me.colPlotDevice = CType(New System.Windows.Forms.ColumnHeader(),System.Windows.Forms.ColumnHeader)
-        Me.colPaperSize = CType(New System.Windows.Forms.ColumnHeader(),System.Windows.Forms.ColumnHeader)
-        Me.colPlotStyle = CType(New System.Windows.Forms.ColumnHeader(),System.Windows.Forms.ColumnHeader)
-        Me.btnSave = New System.Windows.Forms.Button()
-        Me.btnCancel = New System.Windows.Forms.Button()
-        Me.SuspendLayout
+        lblName = New Label()
+        txtName = New TextBox()
+        lblPlotDevice = New Label()
+        cmbPlotDevice = New ComboBox()
+        lblPaperSize = New Label()
+        cmbPaperSize = New ComboBox()
+        lblPlotStyle = New Label()
+        cmbPlotStyle = New ComboBox()
+        btnAdd = New Button()
+        btnModify = New Button()
+        btnRemove = New Button()
+        lstPresets = New ListView()
+        colName = CType(New ColumnHeader(), ColumnHeader)
+        colPlotDevice = CType(New ColumnHeader(), ColumnHeader)
+        colPaperSize = CType(New ColumnHeader(), ColumnHeader)
+        colPlotStyle = CType(New ColumnHeader(), ColumnHeader)
+        btnSave = New Button()
+        btnCancel = New Button()
+        SuspendLayout
         '
         'lblName
         '
-        Me.lblName.Location = New System.Drawing.Point(11, 15)
-        Me.lblName.Name = "lblName"
-        Me.lblName.Size = New System.Drawing.Size(40, 20)
-        Me.lblName.TabIndex = 0
-        Me.lblName.Text = "名称"
+        lblName.Location = New Drawing.Point(11, 15)
+        lblName.Name = "lblName"
+        lblName.Size = New Drawing.Size(40, 20)
+        lblName.TabIndex = 0
+        lblName.Text = "名称"
         '
         'txtName
         '
-        Me.txtName.Location = New System.Drawing.Point(7, 35)
-        Me.txtName.Name = "txtName"
-        Me.txtName.Size = New System.Drawing.Size(152, 21)
-        Me.txtName.TabIndex = 1
+        txtName.Location = New Drawing.Point(7, 35)
+        txtName.Name = "txtName"
+        txtName.Size = New Drawing.Size(152, 21)
+        txtName.TabIndex = 1
         '
         'lblPlotDevice
         '
-        Me.lblPlotDevice.Location = New System.Drawing.Point(175, 15)
-        Me.lblPlotDevice.Name = "lblPlotDevice"
-        Me.lblPlotDevice.Size = New System.Drawing.Size(60, 20)
-        Me.lblPlotDevice.TabIndex = 2
-        Me.lblPlotDevice.Text = "打印设备"
+        lblPlotDevice.Location = New Drawing.Point(175, 15)
+        lblPlotDevice.Name = "lblPlotDevice"
+        lblPlotDevice.Size = New Drawing.Size(60, 20)
+        lblPlotDevice.TabIndex = 2
+        lblPlotDevice.Text = "打印设备"
         '
         'cmbPlotDevice
         '
-        Me.cmbPlotDevice.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList
-        Me.cmbPlotDevice.Location = New System.Drawing.Point(173, 35)
-        Me.cmbPlotDevice.Name = "cmbPlotDevice"
-        Me.cmbPlotDevice.Size = New System.Drawing.Size(152, 20)
-        Me.cmbPlotDevice.TabIndex = 3
+        cmbPlotDevice.DropDownStyle = ComboBoxStyle.DropDownList
+        cmbPlotDevice.Location = New Drawing.Point(173, 35)
+        cmbPlotDevice.Name = "cmbPlotDevice"
+        cmbPlotDevice.Size = New Drawing.Size(152, 20)
+        cmbPlotDevice.TabIndex = 3
         '
         'lblPaperSize
         '
-        Me.lblPaperSize.Location = New System.Drawing.Point(341, 15)
-        Me.lblPaperSize.Name = "lblPaperSize"
-        Me.lblPaperSize.Size = New System.Drawing.Size(60, 20)
-        Me.lblPaperSize.TabIndex = 4
-        Me.lblPaperSize.Text = "打印纸张"
+        lblPaperSize.Location = New Drawing.Point(341, 15)
+        lblPaperSize.Name = "lblPaperSize"
+        lblPaperSize.Size = New Drawing.Size(60, 20)
+        lblPaperSize.TabIndex = 4
+        lblPaperSize.Text = "打印纸张"
         '
         'cmbPaperSize
         '
-        Me.cmbPaperSize.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList
-        Me.cmbPaperSize.Location = New System.Drawing.Point(339, 35)
-        Me.cmbPaperSize.Name = "cmbPaperSize"
-        Me.cmbPaperSize.Size = New System.Drawing.Size(152, 20)
-        Me.cmbPaperSize.TabIndex = 5
+        cmbPaperSize.DropDownStyle = ComboBoxStyle.DropDownList
+        cmbPaperSize.Location = New Drawing.Point(339, 35)
+        cmbPaperSize.Name = "cmbPaperSize"
+        cmbPaperSize.Size = New Drawing.Size(152, 20)
+        cmbPaperSize.TabIndex = 5
         '
         'lblPlotStyle
         '
-        Me.lblPlotStyle.Location = New System.Drawing.Point(507, 15)
-        Me.lblPlotStyle.Name = "lblPlotStyle"
-        Me.lblPlotStyle.Size = New System.Drawing.Size(60, 20)
-        Me.lblPlotStyle.TabIndex = 6
-        Me.lblPlotStyle.Text = "打印样式"
+        lblPlotStyle.Location = New Drawing.Point(507, 15)
+        lblPlotStyle.Name = "lblPlotStyle"
+        lblPlotStyle.Size = New Drawing.Size(60, 20)
+        lblPlotStyle.TabIndex = 6
+        lblPlotStyle.Text = "打印样式"
         '
         'cmbPlotStyle
         '
-        Me.cmbPlotStyle.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList
-        Me.cmbPlotStyle.Location = New System.Drawing.Point(505, 35)
-        Me.cmbPlotStyle.Name = "cmbPlotStyle"
-        Me.cmbPlotStyle.Size = New System.Drawing.Size(152, 20)
-        Me.cmbPlotStyle.TabIndex = 7
+        cmbPlotStyle.DropDownStyle = ComboBoxStyle.DropDownList
+        cmbPlotStyle.Location = New Drawing.Point(505, 35)
+        cmbPlotStyle.Name = "cmbPlotStyle"
+        cmbPlotStyle.Size = New Drawing.Size(152, 20)
+        cmbPlotStyle.TabIndex = 7
         '
         'btnAdd
         '
-        Me.btnAdd.Location = New System.Drawing.Point(96, 65)
-        Me.btnAdd.Name = "btnAdd"
-        Me.btnAdd.Size = New System.Drawing.Size(141, 21)
-        Me.btnAdd.TabIndex = 8
-        Me.btnAdd.Text = "添加"
+        btnAdd.Location = New Drawing.Point(96, 65)
+        btnAdd.Name = "btnAdd"
+        btnAdd.Size = New Drawing.Size(141, 21)
+        btnAdd.TabIndex = 8
+        btnAdd.Text = "添加"
         '
         'btnModify
         '
-        Me.btnModify.Location = New System.Drawing.Point(252, 65)
-        Me.btnModify.Name = "btnModify"
-        Me.btnModify.Size = New System.Drawing.Size(141, 21)
-        Me.btnModify.TabIndex = 9
-        Me.btnModify.Text = "修改"
+        btnModify.Location = New Drawing.Point(252, 65)
+        btnModify.Name = "btnModify"
+        btnModify.Size = New Drawing.Size(141, 21)
+        btnModify.TabIndex = 9
+        btnModify.Text = "修改"
         '
         'btnRemove
         '
-        Me.btnRemove.Location = New System.Drawing.Point(408, 65)
-        Me.btnRemove.Name = "btnRemove"
-        Me.btnRemove.Size = New System.Drawing.Size(141, 21)
-        Me.btnRemove.TabIndex = 10
-        Me.btnRemove.Text = "移除"
+        btnRemove.Location = New Drawing.Point(408, 65)
+        btnRemove.Name = "btnRemove"
+        btnRemove.Size = New Drawing.Size(141, 21)
+        btnRemove.TabIndex = 10
+        btnRemove.Text = "移除"
         '
         'lstPresets
         '
-        Me.lstPresets.Columns.AddRange(New System.Windows.Forms.ColumnHeader() {Me.colName, Me.colPlotDevice, Me.colPaperSize, Me.colPlotStyle})
-        Me.lstPresets.FullRowSelect = true
-        Me.lstPresets.GridLines = true
-        Me.lstPresets.HideSelection = false
-        Me.lstPresets.Location = New System.Drawing.Point(3, 98)
-        Me.lstPresets.Name = "lstPresets"
-        Me.lstPresets.Size = New System.Drawing.Size(660, 263)
-        Me.lstPresets.TabIndex = 11
-        Me.lstPresets.UseCompatibleStateImageBehavior = false
-        Me.lstPresets.View = System.Windows.Forms.View.Details
+        lstPresets.Columns.AddRange(New ColumnHeader() {colName, colPlotDevice, colPaperSize, colPlotStyle})
+        lstPresets.FullRowSelect = true
+        lstPresets.GridLines = true
+        lstPresets.HideSelection = false
+        lstPresets.Location = New Drawing.Point(3, 98)
+        lstPresets.Name = "lstPresets"
+        lstPresets.Size = New Drawing.Size(660, 263)
+        lstPresets.TabIndex = 11
+        lstPresets.UseCompatibleStateImageBehavior = false
+        lstPresets.View = View.Details
         '
         'colName
         '
-        Me.colName.Text = "名称"
-        Me.colName.Width = 150
+        colName.Text = "名称"
+        colName.Width = 150
         '
         'colPlotDevice
         '
-        Me.colPlotDevice.Text = "打印设备"
-        Me.colPlotDevice.Width = 200
+        colPlotDevice.Text = "打印设备"
+        colPlotDevice.Width = 200
         '
         'colPaperSize
         '
-        Me.colPaperSize.Text = "打印纸张"
-        Me.colPaperSize.Width = 150
+        colPaperSize.Text = "打印纸张"
+        colPaperSize.Width = 150
         '
         'colPlotStyle
         '
-        Me.colPlotStyle.Text = "打印样式"
-        Me.colPlotStyle.Width = 140
+        colPlotStyle.Text = "打印样式"
+        colPlotStyle.Width = 140
         '
         'btnSave
         '
-        Me.btnSave.Location = New System.Drawing.Point(252, 373)
-        Me.btnSave.Name = "btnSave"
-        Me.btnSave.Size = New System.Drawing.Size(75, 25)
-        Me.btnSave.TabIndex = 12
-        Me.btnSave.Text = "保存"
+        btnSave.Location = New Drawing.Point(252, 373)
+        btnSave.Name = "btnSave"
+        btnSave.Size = New Drawing.Size(75, 25)
+        btnSave.TabIndex = 12
+        btnSave.Text = "保存"
         '
         'btnCancel
         '
-        Me.btnCancel.Location = New System.Drawing.Point(337, 373)
-        Me.btnCancel.Name = "btnCancel"
-        Me.btnCancel.Size = New System.Drawing.Size(75, 25)
-        Me.btnCancel.TabIndex = 13
-        Me.btnCancel.Text = "取消"
+        btnCancel.Location = New Drawing.Point(337, 373)
+        btnCancel.Name = "btnCancel"
+        btnCancel.Size = New Drawing.Size(75, 25)
+        btnCancel.TabIndex = 13
+        btnCancel.Text = "取消"
         '
         'PresetConfigForm
         '
-        Me.ClientSize = New System.Drawing.Size(664, 409)
-        Me.Controls.Add(Me.lblName)
-        Me.Controls.Add(Me.txtName)
-        Me.Controls.Add(Me.lblPlotDevice)
-        Me.Controls.Add(Me.cmbPlotDevice)
-        Me.Controls.Add(Me.lblPaperSize)
-        Me.Controls.Add(Me.cmbPaperSize)
-        Me.Controls.Add(Me.lblPlotStyle)
-        Me.Controls.Add(Me.cmbPlotStyle)
-        Me.Controls.Add(Me.btnAdd)
-        Me.Controls.Add(Me.btnModify)
-        Me.Controls.Add(Me.btnRemove)
-        Me.Controls.Add(Me.lstPresets)
-        Me.Controls.Add(Me.btnSave)
-        Me.Controls.Add(Me.btnCancel)
-        Me.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog
-        Me.MaximizeBox = false
-        Me.MinimizeBox = false
-        Me.Name = "PresetConfigForm"
-        Me.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen
-        Me.Text = "预设配置"
-        Me.TopMost = True
-        Me.ResumeLayout(False)
-        Me.PerformLayout
+        ClientSize = New Drawing.Size(664, 409)
+        Controls.Add(lblName)
+        Controls.Add(txtName)
+        Controls.Add(lblPlotDevice)
+        Controls.Add(cmbPlotDevice)
+        Controls.Add(lblPaperSize)
+        Controls.Add(cmbPaperSize)
+        Controls.Add(lblPlotStyle)
+        Controls.Add(cmbPlotStyle)
+        Controls.Add(btnAdd)
+        Controls.Add(btnModify)
+        Controls.Add(btnRemove)
+        Controls.Add(lstPresets)
+        Controls.Add(btnSave)
+        Controls.Add(btnCancel)
+        FormBorderStyle = FormBorderStyle.FixedDialog
+        MaximizeBox = false
+        MinimizeBox = false
+        Name = "PresetConfigForm"
+        StartPosition = FormStartPosition.CenterScreen
+        Text = "预设配置"
+        TopMost = True
+        ResumeLayout(False)
+        PerformLayout
 
-End Sub
+    End Sub
 
     Private Sub LoadPlotDevices()
         Try
@@ -385,7 +383,8 @@ End Sub
 
             ' 清空输入
             txtName.Clear()
-            MessageBox.Show("预设添加成功", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+
+            _hasChanges = True
         Catch ex As Exception
             MessageBox.Show("添加预设失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
@@ -399,7 +398,7 @@ End Sub
             End If
 
             Dim item As ListViewItem = lstPresets.SelectedItems(0)
-            Dim preset As PresetInfo = CType(item.Tag, PresetInfo)
+            Dim preset = CType(item.Tag, PresetInfo)
 
             If Not _isEditing Then
                 ' 进入编辑模式
@@ -462,7 +461,7 @@ End Sub
                 btnRemove.Enabled = True
                 txtName.Clear()
 
-                MessageBox.Show("预设修改成功", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                _hasChanges = True
             End If
         Catch ex As Exception
             MessageBox.Show("修改预设失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -477,7 +476,7 @@ End Sub
             End If
 
             Dim item As ListViewItem = lstPresets.SelectedItems(0)
-            Dim preset As PresetInfo = CType(item.Tag, PresetInfo)
+            Dim preset = CType(item.Tag, PresetInfo)
 
             If MessageBox.Show($"确定要移除预设 '{preset.Name}' 吗？", "确认", MessageBoxButtons.YesNo, MessageBoxIcon.Question) = DialogResult.Yes Then
                 ' 从列表中移除
@@ -487,7 +486,7 @@ End Sub
                 ' 删除文件
                 _configManager.DeletePreset(preset.Name)
 
-                MessageBox.Show("预设移除成功", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                _hasChanges = True
             End If
         Catch ex As Exception
             MessageBox.Show("移除预设失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -495,13 +494,13 @@ End Sub
     End Sub
 
     Private Sub BtnSave_Click(sender As Object, e As EventArgs) Handles btnSave.Click
-        Me.DialogResult = DialogResult.OK
-        Me.Close()
+        DialogResult = If(_hasChanges, DialogResult.OK, DialogResult.Cancel)
+        Close()
     End Sub
 
     Private Sub BtnCancel_Click(sender As Object, e As EventArgs) Handles btnCancel.Click
-        Me.DialogResult = DialogResult.Cancel
-        Me.Close()
+        DialogResult = If(_hasChanges, DialogResult.OK, DialogResult.Cancel)
+        Close()
     End Sub
 
     Private Sub LstPresets_SelectedIndexChanged(sender As Object, e As EventArgs) Handles lstPresets.SelectedIndexChanged
@@ -509,7 +508,7 @@ End Sub
 
         If lstPresets.SelectedItems.Count > 0 Then
             Dim item As ListViewItem = lstPresets.SelectedItems(0)
-            Dim preset As PresetInfo = CType(item.Tag, PresetInfo)
+            Dim preset = CType(item.Tag, PresetInfo)
 
             txtName.Text = preset.Name
             SelectComboBoxItem(cmbPlotDevice, preset.PlotDevice)
@@ -520,7 +519,7 @@ End Sub
     End Sub
 
     Private Sub SelectComboBoxItem(cmb As ComboBox, value As String)
-        For i As Integer = 0 To cmb.Items.Count - 1
+        For i = 0 To cmb.Items.Count - 1
             If cmb.Items(i).ToString().Equals(value, StringComparison.OrdinalIgnoreCase) Then
                 cmb.SelectedIndex = i
                 Return

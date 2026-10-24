@@ -49,11 +49,28 @@ Public Class Commands
             If result.Status = PromptStatus.OK Then
                 Dim ss As SelectionSet = result.Value
 
+                ' 询问偏移距离
+                Dim offsetDist As Double = 0
+                Dim distOpts As New PromptDistanceOptions(vbLf & "输入偏移距离（正值扩大，负值缩小）<0>: ")
+                distOpts.AllowNegative = True
+                distOpts.AllowZero = True
+                distOpts.AllowNone = True
+                distOpts.DefaultValue = 0
+                Dim distResult As PromptDoubleResult = ed.GetDistance(distOpts)
+
+                If distResult.Status = PromptStatus.OK Then
+                    offsetDist = distResult.Value
+                ElseIf distResult.Status = PromptStatus.None Then
+                    offsetDist = 0
+                Else
+                    Return
+                End If
+
                 Using tr As Transaction = doc.Database.TransactionManager.StartTransaction()
                     Dim bounds As Extents3d = CalculateBoundsForCommand(doc.Database, ss, tr)
 
                     If bounds.MinPoint <> bounds.MaxPoint Then
-                        CreateBoundingBoxForCommand(doc.Database, bounds, tr)
+                        CreateBoundingBoxForCommand(doc.Database, bounds, tr, offsetDist)
                         tr.Commit()
                         ed.WriteMessage(vbLf & "包围框创建成功！")
                     Else
@@ -97,15 +114,21 @@ Public Class Commands
         End If
     End Function
 
-    Private Sub CreateBoundingBoxForCommand(db As Database, bounds As Extents3d, tr As Transaction)
+    Private Sub CreateBoundingBoxForCommand(db As Database, bounds As Extents3d, tr As Transaction, offsetDist As Double)
         Dim bt = CType(tr.GetObject(db.BlockTableId, OpenMode.ForRead), BlockTable)
         Dim modelSpace = CType(tr.GetObject(bt(BlockTableRecord.ModelSpace), OpenMode.ForWrite), BlockTableRecord)
 
+        ' 应用偏移距离
+        Dim minX As Double = bounds.MinPoint.X - offsetDist
+        Dim minY As Double = bounds.MinPoint.Y - offsetDist
+        Dim maxX As Double = bounds.MaxPoint.X + offsetDist
+        Dim maxY As Double = bounds.MaxPoint.Y + offsetDist
+
         Dim pl As New Polyline()
-        pl.AddVertexAt(0, New Point2d(bounds.MinPoint.X, bounds.MinPoint.Y), 0, 0, 0)
-        pl.AddVertexAt(1, New Point2d(bounds.MaxPoint.X, bounds.MinPoint.Y), 0, 0, 0)
-        pl.AddVertexAt(2, New Point2d(bounds.MaxPoint.X, bounds.MaxPoint.Y), 0, 0, 0)
-        pl.AddVertexAt(3, New Point2d(bounds.MinPoint.X, bounds.MaxPoint.Y), 0, 0, 0)
+        pl.AddVertexAt(0, New Point2d(minX, minY), 0, 0, 0)
+        pl.AddVertexAt(1, New Point2d(maxX, minY), 0, 0, 0)
+        pl.AddVertexAt(2, New Point2d(maxX, maxY), 0, 0, 0)
+        pl.AddVertexAt(3, New Point2d(minX, maxY), 0, 0, 0)
         pl.Closed = True
         pl.Layer = "0"
 

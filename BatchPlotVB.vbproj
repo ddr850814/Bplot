@@ -60,7 +60,6 @@
     <Reference Include="System.Xml" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
-    <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="System.Net.Http" />
   </ItemGroup>
   <ItemGroup>
@@ -114,6 +113,7 @@
     <Compile Include="ConfigManager.vb" />
     <Compile Include="FrameDetector.vb" />
     <Compile Include="PlotEngine.vb" />
+    <Compile Include="SequenceOverlay.vb" />
     <Compile Include="SelectionForm.vb">
       <SubType>Form</SubType>
     </Compile>
@@ -127,6 +127,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="PresetConfigForm.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="PreviewAllForm.vb">
       <SubType>Form</SubType>
     </Compile>
   </ItemGroup>

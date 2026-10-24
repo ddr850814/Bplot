@@ -1,5 +1,5 @@
-Imports System.Windows.Forms
 Imports System.Drawing
+Imports System.Windows.Forms
 
 Public Class SelectionForm
     Inherits Form
@@ -22,6 +22,7 @@ Public Class SelectionForm
         FormBorderStyle = FormBorderStyle.FixedDialog
         MaximizeBox = False
         MinimizeBox = False
+        TopMost = True
 
         lstItems = New ListBox()
         lstItems.Location = New Point(12, 12)
@@ -62,14 +63,14 @@ Public Class SelectionForm
     End Sub
 
     Private Sub InitializeComponent()
-        Me.SuspendLayout()
+        SuspendLayout()
         '
         'SelectionForm
         '
-        Me.ClientSize = New System.Drawing.Size(284, 261)
-        Me.Name = "SelectionForm"
-        Me.TopMost = True
-        Me.ResumeLayout(False)
+        ClientSize = New Size(284, 261)
+        Name = "SelectionForm"
+        TopMost = True
+        ResumeLayout(False)
 
     End Sub
 End Class

@@ -1,7 +1,5 @@
-Imports System.Windows.Forms
-Imports System.Drawing
 Imports System.IO
-Imports System.Linq
+Imports System.Windows.Forms
 
 Public Class BlockPaperSettingsForm
     Inherits Form
@@ -57,7 +55,7 @@ Public Class BlockPaperSettingsForm
 
             If File.Exists(_staticConfigFilePath) Then
                 Dim lines() As String = File.ReadAllLines(_staticConfigFilePath)
-                Dim currentListName As String = ""
+                Dim currentListName = ""
                 Dim currentList As List(Of BlockPaperSetting) = Nothing
 
                 For Each line As String In lines
@@ -113,156 +111,159 @@ Public Class BlockPaperSettingsForm
     End Sub
 
     Private Sub InitializeComponent()
-        Me.lblBlockList = New System.Windows.Forms.Label()
-        Me.cmbBlockList = New System.Windows.Forms.ComboBox()
-        Me.btnSaveBlockList = New System.Windows.Forms.Button()
-        Me.lblPlotDevice = New System.Windows.Forms.Label()
-        Me.cmbPlotDevice = New System.Windows.Forms.ComboBox()
-        Me.lblPaperSize = New System.Windows.Forms.Label()
-        Me.cmbPaperSize = New System.Windows.Forms.ComboBox()
-        Me.btnAdd = New System.Windows.Forms.Button()
-        Me.btnModify = New System.Windows.Forms.Button()
-        Me.btnRemove = New System.Windows.Forms.Button()
-        Me.lstSettings = New System.Windows.Forms.ListView()
-        Me.btnSave = New System.Windows.Forms.Button()
-        Me.btnCancel = New System.Windows.Forms.Button()
-        Me.SuspendLayout()
+        lblBlockList = New Label()
+        cmbBlockList = New ComboBox()
+        btnSaveBlockList = New Button()
+        lblPlotDevice = New Label()
+        cmbPlotDevice = New ComboBox()
+        lblPaperSize = New Label()
+        cmbPaperSize = New ComboBox()
+        btnAdd = New Button()
+        btnModify = New Button()
+        btnRemove = New Button()
+        lstSettings = New ListView()
+        btnSave = New Button()
+        btnCancel = New Button()
+        SuspendLayout()
         '
         'lblBlockList
         '
-        Me.lblBlockList.Location = New System.Drawing.Point(12, 15)
-        Me.lblBlockList.Name = "lblBlockList"
-        Me.lblBlockList.Size = New System.Drawing.Size(60, 20)
-        Me.lblBlockList.TabIndex = 0
-        Me.lblBlockList.Text = "图块列表:"
+        lblBlockList.Location = New Drawing.Point(12, 15)
+        lblBlockList.Name = "lblBlockList"
+        lblBlockList.Size = New Drawing.Size(60, 20)
+        lblBlockList.TabIndex = 0
+        lblBlockList.Text = "图块列表:"
         '
         'cmbBlockList
         '
-        Me.cmbBlockList.Location = New System.Drawing.Point(78, 12)
-        Me.cmbBlockList.Name = "cmbBlockList"
-        Me.cmbBlockList.Size = New System.Drawing.Size(170, 20)
-        Me.cmbBlockList.TabIndex = 1
+        cmbBlockList.Location = New Drawing.Point(78, 12)
+        cmbBlockList.Name = "cmbBlockList"
+        cmbBlockList.Size = New Drawing.Size(170, 20)
+        cmbBlockList.TabIndex = 1
         '
         'btnSaveBlockList
         '
-        Me.btnSaveBlockList.Location = New System.Drawing.Point(263, 11)
-        Me.btnSaveBlockList.Name = "btnSaveBlockList"
-        Me.btnSaveBlockList.Size = New System.Drawing.Size(75, 23)
-        Me.btnSaveBlockList.TabIndex = 2
-        Me.btnSaveBlockList.Text = "保存"
+        btnSaveBlockList.Location = New Drawing.Point(263, 11)
+        btnSaveBlockList.Name = "btnSaveBlockList"
+        btnSaveBlockList.Size = New Drawing.Size(75, 23)
+        btnSaveBlockList.TabIndex = 2
+        btnSaveBlockList.Text = "保存"
         '
         'lblPlotDevice
         '
-        Me.lblPlotDevice.Location = New System.Drawing.Point(12, 46)
-        Me.lblPlotDevice.Name = "lblPlotDevice"
-        Me.lblPlotDevice.Size = New System.Drawing.Size(60, 20)
-        Me.lblPlotDevice.TabIndex = 3
-        Me.lblPlotDevice.Text = "打印设备"
+        lblPlotDevice.Location = New Drawing.Point(12, 46)
+        lblPlotDevice.Name = "lblPlotDevice"
+        lblPlotDevice.Size = New Drawing.Size(60, 20)
+        lblPlotDevice.TabIndex = 3
+        lblPlotDevice.Text = "打印设备"
         '
         'cmbPlotDevice
         '
-        Me.cmbPlotDevice.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList
-        Me.cmbPlotDevice.Location = New System.Drawing.Point(12, 68)
-        Me.cmbPlotDevice.Name = "cmbPlotDevice"
-        Me.cmbPlotDevice.Size = New System.Drawing.Size(166, 20)
-        Me.cmbPlotDevice.TabIndex = 4
+        cmbPlotDevice.DropDownStyle = ComboBoxStyle.DropDownList
+        cmbPlotDevice.Location = New Drawing.Point(12, 68)
+        cmbPlotDevice.Name = "cmbPlotDevice"
+        cmbPlotDevice.Size = New Drawing.Size(166, 20)
+        cmbPlotDevice.TabIndex = 4
         '
         'lblPaperSize
         '
-        Me.lblPaperSize.Location = New System.Drawing.Point(187, 46)
-        Me.lblPaperSize.Name = "lblPaperSize"
-        Me.lblPaperSize.Size = New System.Drawing.Size(60, 20)
-        Me.lblPaperSize.TabIndex = 5
-        Me.lblPaperSize.Text = "打印纸张"
+        lblPaperSize.Location = New Drawing.Point(187, 46)
+        lblPaperSize.Name = "lblPaperSize"
+        lblPaperSize.Size = New Drawing.Size(60, 20)
+        lblPaperSize.TabIndex = 5
+        lblPaperSize.Text = "打印纸张"
         '
         'cmbPaperSize
         '
-        Me.cmbPaperSize.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList
-        Me.cmbPaperSize.Location = New System.Drawing.Point(187, 68)
-        Me.cmbPaperSize.Name = "cmbPaperSize"
-        Me.cmbPaperSize.Size = New System.Drawing.Size(166, 20)
-        Me.cmbPaperSize.TabIndex = 6
+        cmbPaperSize.DropDownStyle = ComboBoxStyle.DropDownList
+        cmbPaperSize.Location = New Drawing.Point(187, 68)
+        cmbPaperSize.Name = "cmbPaperSize"
+        cmbPaperSize.Size = New Drawing.Size(166, 20)
+        cmbPaperSize.TabIndex = 6
         '
         'btnAdd
         '
-        Me.btnAdd.Location = New System.Drawing.Point(36, 98)
-        Me.btnAdd.Name = "btnAdd"
-        Me.btnAdd.Size = New System.Drawing.Size(88, 25)
-        Me.btnAdd.TabIndex = 7
-        Me.btnAdd.Text = "添加"
+        btnAdd.Location = New Drawing.Point(36, 98)
+        btnAdd.Name = "btnAdd"
+        btnAdd.Size = New Drawing.Size(88, 25)
+        btnAdd.TabIndex = 7
+        btnAdd.Text = "添加"
         '
         'btnModify
         '
-        Me.btnModify.Location = New System.Drawing.Point(136, 98)
-        Me.btnModify.Name = "btnModify"
-        Me.btnModify.Size = New System.Drawing.Size(88, 25)
-        Me.btnModify.TabIndex = 8
-        Me.btnModify.Text = "修改"
+        btnModify.Location = New Drawing.Point(136, 98)
+        btnModify.Name = "btnModify"
+        btnModify.Size = New Drawing.Size(88, 25)
+        btnModify.TabIndex = 8
+        btnModify.Text = "修改"
         '
         'btnRemove
         '
-        Me.btnRemove.Location = New System.Drawing.Point(236, 98)
-        Me.btnRemove.Name = "btnRemove"
-        Me.btnRemove.Size = New System.Drawing.Size(88, 25)
-        Me.btnRemove.TabIndex = 9
-        Me.btnRemove.Text = "移除"
+        btnRemove.Location = New Drawing.Point(236, 98)
+        btnRemove.Name = "btnRemove"
+        btnRemove.Size = New Drawing.Size(88, 25)
+        btnRemove.TabIndex = 9
+        btnRemove.Text = "移除"
         '
         'lstSettings
         '
-        Me.lstSettings.FullRowSelect = True
-        Me.lstSettings.GridLines = True
-        Me.lstSettings.HideSelection = False
-        Me.lstSettings.Location = New System.Drawing.Point(12, 131)
-        Me.lstSettings.Name = "lstSettings"
-        Me.lstSettings.Size = New System.Drawing.Size(341, 231)
-        Me.lstSettings.TabIndex = 11
-        Me.lstSettings.UseCompatibleStateImageBehavior = False
-        Me.lstSettings.View = System.Windows.Forms.View.Details
+        lstSettings.FullRowSelect = True
+        lstSettings.GridLines = True
+        lstSettings.HideSelection = False
+        lstSettings.Location = New Drawing.Point(12, 131)
+        lstSettings.Name = "lstSettings"
+        lstSettings.Size = New Drawing.Size(341, 231)
+        lstSettings.TabIndex = 11
+        lstSettings.UseCompatibleStateImageBehavior = False
+        lstSettings.View = View.Details
+        ' Details 视图必须有列才能渲染行；无列时整列表不可见且无法选中
+        lstSettings.Columns.Add("打印设备", 190)
+        lstSettings.Columns.Add("纸张", 130)
         '
         'btnSave
         '
-        Me.btnSave.DialogResult = System.Windows.Forms.DialogResult.OK
-        Me.btnSave.Location = New System.Drawing.Point(81, 371)
-        Me.btnSave.Name = "btnSave"
-        Me.btnSave.Size = New System.Drawing.Size(85, 28)
-        Me.btnSave.TabIndex = 12
-        Me.btnSave.Text = "保存"
+        btnSave.DialogResult = DialogResult.OK
+        btnSave.Location = New Drawing.Point(81, 371)
+        btnSave.Name = "btnSave"
+        btnSave.Size = New Drawing.Size(85, 28)
+        btnSave.TabIndex = 12
+        btnSave.Text = "保存"
         '
         'btnCancel
         '
-        Me.btnCancel.DialogResult = System.Windows.Forms.DialogResult.Cancel
-        Me.btnCancel.Location = New System.Drawing.Point(191, 371)
-        Me.btnCancel.Name = "btnCancel"
-        Me.btnCancel.Size = New System.Drawing.Size(85, 28)
-        Me.btnCancel.TabIndex = 13
-        Me.btnCancel.Text = "取消"
+        btnCancel.DialogResult = DialogResult.Cancel
+        btnCancel.Location = New Drawing.Point(191, 371)
+        btnCancel.Name = "btnCancel"
+        btnCancel.Size = New Drawing.Size(85, 28)
+        btnCancel.TabIndex = 13
+        btnCancel.Text = "取消"
         '
         'BlockPaperSettingsForm
         '
-        Me.AcceptButton = Me.btnSave
-        Me.CancelButton = Me.btnCancel
-        Me.ClientSize = New System.Drawing.Size(363, 411)
-        Me.Controls.Add(Me.lblBlockList)
-        Me.Controls.Add(Me.cmbBlockList)
-        Me.Controls.Add(Me.btnSaveBlockList)
-        Me.Controls.Add(Me.lblPlotDevice)
-        Me.Controls.Add(Me.cmbPlotDevice)
-        Me.Controls.Add(Me.lblPaperSize)
-        Me.Controls.Add(Me.cmbPaperSize)
-        Me.Controls.Add(Me.btnAdd)
-        Me.Controls.Add(Me.btnModify)
-        Me.Controls.Add(Me.btnRemove)
-        Me.Controls.Add(Me.lstSettings)
-        Me.Controls.Add(Me.btnSave)
-        Me.Controls.Add(Me.btnCancel)
-        Me.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog
-        Me.MaximizeBox = False
-        Me.MinimizeBox = False
-        Me.Name = "BlockPaperSettingsForm"
-        Me.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent
-        Me.Text = "图块对应纸张设置"
-        Me.TopMost = True
-        Me.ResumeLayout(False)
+        AcceptButton = btnSave
+        CancelButton = btnCancel
+        ClientSize = New Drawing.Size(363, 411)
+        Controls.Add(lblBlockList)
+        Controls.Add(cmbBlockList)
+        Controls.Add(btnSaveBlockList)
+        Controls.Add(lblPlotDevice)
+        Controls.Add(cmbPlotDevice)
+        Controls.Add(lblPaperSize)
+        Controls.Add(cmbPaperSize)
+        Controls.Add(btnAdd)
+        Controls.Add(btnModify)
+        Controls.Add(btnRemove)
+        Controls.Add(lstSettings)
+        Controls.Add(btnSave)
+        Controls.Add(btnCancel)
+        FormBorderStyle = FormBorderStyle.FixedDialog
+        MaximizeBox = False
+        MinimizeBox = False
+        Name = "BlockPaperSettingsForm"
+        StartPosition = FormStartPosition.CenterParent
+        Text = "图块对应纸张设置"
+        TopMost = True
+        ResumeLayout(False)
 
     End Sub
 
@@ -274,7 +275,7 @@ Public Class BlockPaperSettingsForm
 
             If File.Exists(_configFilePath) Then
                 Dim lines() As String = File.ReadAllLines(_configFilePath)
-                Dim currentListName As String = ""
+                Dim currentListName = ""
                 Dim currentList As List(Of BlockPaperSetting) = Nothing
 
                 For Each line As String In lines
@@ -339,11 +340,11 @@ Public Class BlockPaperSettingsForm
                     cmbPlotDevice.Items.Add(plotter)
                 Next
             End If
-            
+
             If cmbPlotDevice.Items.Count = 0 Then
                 cmbPlotDevice.Items.Add("无")
             End If
-            
+
             cmbPlotDevice.SelectedIndex = 0
             LoadPaperList()
         Catch
@@ -354,7 +355,7 @@ Public Class BlockPaperSettingsForm
     ' 根据选中的打印设备加载纸张列表
     Private Sub LoadPaperList()
         Try
-            Dim selectedPlotter As String = ""
+            Dim selectedPlotter = ""
             If cmbPlotDevice.SelectedItem IsNot Nothing Then
                 selectedPlotter = cmbPlotDevice.SelectedItem.ToString()
             End If

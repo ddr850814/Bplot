@@ -1,5 +1,4 @@
 Imports System.IO
-Imports System.Collections.Generic
 
 Public Class ConfigManager
     Private ReadOnly _configDir As String
@@ -36,15 +35,47 @@ Public Class ConfigManager
         Try
             EnsureDirectoryExists()
             Dim filePath As String = Path.Combine(_configDir, $"{name}.cfg")
-            Using writer As New StreamWriter(filePath, False)
-                For Each kvp As KeyValuePair(Of String, String) In config
-                    writer.WriteLine($"{kvp.Key}={kvp.Value}")
-                Next
-            End Using
+            Dim sb As New System.Text.StringBuilder()
+            For Each kvp As KeyValuePair(Of String, String) In config
+                sb.AppendLine($"{kvp.Key}={kvp.Value}")
+            Next
+            WriteTextAtomic(filePath, sb.ToString())
             _logger.Info($"预配置 '{name}' 已保存")
         Catch ex As Exception
             _logger.Error($"保存预配置 '{name}' 失败", ex)
             Throw
+        End Try
+    End Sub
+
+    ' 原子写入配置：先写唯一临时文件，再 File.Replace/Move 换入；
+    ' 目标被杀毒软件或另一 CAD 实例短暂占用时退避重试，仍失败则兜底直接覆盖复制，
+    ' 避免 CAD 崩溃/文件被锁时把配置写坏
+    Private Shared ReadOnly s_retryDelaysMs As Integer() = {50, 100, 200}
+
+    Private Shared Sub WriteTextAtomic(filePath As String, contents As String)
+        Dim directory As String = Path.GetDirectoryName(filePath)
+        Dim tempPath As String = Path.Combine(directory, Path.GetFileName(filePath) & "." & Guid.NewGuid().ToString("N") & ".tmp")
+        Try
+            File.WriteAllText(tempPath, contents)
+            For attempt = 0 To s_retryDelaysMs.Length
+                If attempt > 0 Then System.Threading.Thread.Sleep(s_retryDelaysMs(attempt - 1))
+                Try
+                    If File.Exists(filePath) Then
+                        File.Replace(tempPath, filePath, filePath & ".bak", True)
+                    Else
+                        File.Move(tempPath, filePath)
+                    End If
+                    Return
+                Catch
+                End Try
+            Next
+            ' 重试窗口内始终无法换入：直接覆盖复制（失败时异常交给调用方）
+            File.Copy(tempPath, filePath, True)
+        Finally
+            Try
+                If File.Exists(tempPath) Then File.Delete(tempPath)
+            Catch
+            End Try
         End Try
     End Sub
 
@@ -60,9 +91,10 @@ Public Class ConfigManager
             Using reader As New StreamReader(filePath)
                 Dim line As String = reader.ReadLine()
                 While line IsNot Nothing
-                    Dim parts As String() = line.Split("="c)
-                    If parts.Length >= 2 Then
-                        config(parts(0)) = parts(1)
+                    ' 值中可含"="（如名称模板）：只按第一个等号拆分，Split("=") 会把值截断
+                    Dim eqIdx As Integer = line.IndexOf("="c)
+                    If eqIdx > 0 Then
+                        config(line.Substring(0, eqIdx)) = line.Substring(eqIdx + 1)
                     End If
                     line = reader.ReadLine()
                 End While
@@ -91,4 +123,60 @@ Public Class ConfigManager
             Throw
         End Try
     End Sub
+
+#Region "UI State Management"
+
+    Private ReadOnly _uiStateFile As String = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BatchPlotVB", "UIState.cfg")
+
+    ''' <summary>
+    ''' 保存控件状态到文件
+    ''' </summary>
+    Public Sub SaveUIState(state As Dictionary(Of String, String))
+        Try
+            Dim stateDir As String = Path.GetDirectoryName(_uiStateFile)
+            If Not Directory.Exists(stateDir) Then
+                Directory.CreateDirectory(stateDir)
+            End If
+
+            Dim sb As New System.Text.StringBuilder()
+            For Each kvp As KeyValuePair(Of String, String) In state
+                sb.AppendLine($"{kvp.Key}={kvp.Value}")
+            Next
+            WriteTextAtomic(_uiStateFile, sb.ToString())
+            _logger.Info("控件状态已保存")
+        Catch ex As Exception
+            _logger.Error("保存控件状态失败", ex)
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' 从文件加载控件状态
+    ''' </summary>
+    Public Function LoadUIState() As Dictionary(Of String, String)
+        Dim state As New Dictionary(Of String, String)()
+        Try
+            If Not File.Exists(_uiStateFile) Then
+                Return state
+            End If
+
+            Using reader As New StreamReader(_uiStateFile)
+                Dim line As String = reader.ReadLine()
+                While line IsNot Nothing
+                    ' 值中可含"="：只按第一个等号拆分，避免值被截断
+                    Dim eqIdx As Integer = line.IndexOf("="c)
+                    If eqIdx > 0 Then
+                        state(line.Substring(0, eqIdx)) = line.Substring(eqIdx + 1)
+                    End If
+                    line = reader.ReadLine()
+                End While
+            End Using
+            _logger.Info("控件状态已加载")
+        Catch ex As Exception
+            _logger.Error("加载控件状态失败", ex)
+        End Try
+        Return state
+    End Function
+
+#End Region
+
 End Class

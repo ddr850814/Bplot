@@ -1,13 +1,11 @@
 Imports System.IO
-Imports System.Windows.Forms
-Imports System.Drawing
-Imports System.Diagnostics
 Imports System.Runtime.InteropServices
-Imports Path = System.IO.Path
+Imports System.Windows.Forms
 Imports Autodesk.AutoCAD.ApplicationServices
 Imports Autodesk.AutoCAD.DatabaseServices
 Imports Autodesk.AutoCAD.EditorInput
 Imports Autodesk.AutoCAD.Geometry
+Imports Path = System.IO.Path
 
 Partial Public Class MainForm
     Inherits Form
@@ -25,7 +23,7 @@ Partial Public Class MainForm
 
     ' 获取窗口类名
     <DllImport("user32.dll", CharSet:=CharSet.Auto)>
-    Private Shared Function GetClassName(hWnd As IntPtr, lpClassName As System.Text.StringBuilder, nMaxCount As Integer) As Integer
+    Private Shared Function GetClassName(hWnd As IntPtr, lpClassName As Text.StringBuilder, nMaxCount As Integer) As Integer
     End Function
 
     ' 委托定义
@@ -135,6 +133,9 @@ Partial Public Class MainForm
     Private _frames As List(Of BatchPlotEngine.FrameInfo)
     Private _multiDocFiles As List(Of String)  ' 多文档打印选中的文件列表
     Private _useSingleDocStyle As Boolean = False  ' 是否使用单文档内部打印样式
+    Private _overlay As FrameSequenceOverlay  ' 图框序号临时标注（打印前在图上核对数量与顺序）
+    Private _overlayDoc As Document  ' 序号标注所属文档（切换文档时重建）
+    ' 保存启动时的文档名称
 
     Public Sub New()
         InitializeComponent()
@@ -142,6 +143,10 @@ Partial Public Class MainForm
         If Not System.ComponentModel.LicenseManager.UsageMode = System.ComponentModel.LicenseUsageMode.Designtime Then
             _plotEngine = New BatchPlotEngine()
             _frames = New List(Of BatchPlotEngine.FrameInfo)()
+            ' 保存原始文档名称
+            Dim doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
+            If doc IsNot Nothing Then
+            End If
             LoadSettings()
         Else
             _frames = New List(Of BatchPlotEngine.FrameInfo)()
@@ -150,6 +155,8 @@ Partial Public Class MainForm
         btnPlotStamp.Enabled = chkPlotStamp.Checked
         ' 初始化输出选项相关控件状态
         UpdateOutputOptionControls()
+        ' 初始化图框形式相关控件状态
+        UpdateFrameTypeControls()
     End Sub
 
     Private Sub InitializeComponent()
@@ -242,18 +249,18 @@ Partial Public Class MainForm
         Me.GroupBox3 = New System.Windows.Forms.GroupBox()
         Me.GroupBox4 = New System.Windows.Forms.GroupBox()
         Me.GroupBox5 = New System.Windows.Forms.GroupBox()
-        Me.grpFrameType.SuspendLayout()
-        Me.grpBlockLayer.SuspendLayout()
-        Me.grpOutputOption.SuspendLayout()
-        Me.grpSelectDrawing.SuspendLayout()
-        Me.grpPlotSettings.SuspendLayout()
-        Me.grpFileLayout.SuspendLayout()
-        Me.GroupBox1.SuspendLayout()
-        Me.GroupBox2.SuspendLayout()
-        Me.GroupBox3.SuspendLayout()
-        Me.GroupBox4.SuspendLayout()
-        Me.GroupBox5.SuspendLayout()
-        Me.SuspendLayout()
+        Me.grpFrameType.SuspendLayout
+        Me.grpBlockLayer.SuspendLayout
+        Me.grpOutputOption.SuspendLayout
+        Me.grpSelectDrawing.SuspendLayout
+        Me.grpPlotSettings.SuspendLayout
+        Me.grpFileLayout.SuspendLayout
+        Me.GroupBox1.SuspendLayout
+        Me.GroupBox2.SuspendLayout
+        Me.GroupBox3.SuspendLayout
+        Me.GroupBox4.SuspendLayout
+        Me.GroupBox5.SuspendLayout
+        Me.SuspendLayout
         '
         'grpFrameType
         '
@@ -267,20 +274,20 @@ Partial Public Class MainForm
         Me.grpFrameType.Name = "grpFrameType"
         Me.grpFrameType.Size = New System.Drawing.Size(240, 99)
         Me.grpFrameType.TabIndex = 0
-        Me.grpFrameType.TabStop = False
+        Me.grpFrameType.TabStop = false
         Me.grpFrameType.Text = "图框形式"
         '
         'radPolyline
         '
         Me.radPolyline.Location = New System.Drawing.Point(10, 20)
         Me.radPolyline.Name = "radPolyline"
-        Me.radPolyline.Size = New System.Drawing.Size(80, 20)
+        Me.radPolyline.Size = New System.Drawing.Size(90, 20)
         Me.radPolyline.TabIndex = 0
-        Me.radPolyline.Text = "多段线(P):"
+        Me.radPolyline.Text = "多段线(&P):"
         '
         'lblPolylineDesc
         '
-        Me.lblPolylineDesc.Location = New System.Drawing.Point(90, 22)
+        Me.lblPolylineDesc.Location = New System.Drawing.Point(100, 22)
         Me.lblPolylineDesc.Name = "lblPolylineDesc"
         Me.lblPolylineDesc.Size = New System.Drawing.Size(120, 20)
         Me.lblPolylineDesc.TabIndex = 1
@@ -288,17 +295,17 @@ Partial Public Class MainForm
         '
         'radBlock
         '
-        Me.radBlock.Checked = True
+        Me.radBlock.Checked = true
         Me.radBlock.Location = New System.Drawing.Point(10, 46)
         Me.radBlock.Name = "radBlock"
         Me.radBlock.Size = New System.Drawing.Size(80, 20)
         Me.radBlock.TabIndex = 2
-        Me.radBlock.TabStop = True
-        Me.radBlock.Text = "图块(B):"
+        Me.radBlock.TabStop = true
+        Me.radBlock.Text = "图块(&B):"
         '
         'lblBlockDesc
         '
-        Me.lblBlockDesc.Location = New System.Drawing.Point(90, 48)
+        Me.lblBlockDesc.Location = New System.Drawing.Point(100, 48)
         Me.lblBlockDesc.Name = "lblBlockDesc"
         Me.lblBlockDesc.Size = New System.Drawing.Size(120, 20)
         Me.lblBlockDesc.TabIndex = 3
@@ -310,11 +317,11 @@ Partial Public Class MainForm
         Me.radLine.Name = "radLine"
         Me.radLine.Size = New System.Drawing.Size(80, 20)
         Me.radLine.TabIndex = 4
-        Me.radLine.Text = "直线(L):"
+        Me.radLine.Text = "直线(&L):"
         '
         'lblLineDesc
         '
-        Me.lblLineDesc.Location = New System.Drawing.Point(90, 74)
+        Me.lblLineDesc.Location = New System.Drawing.Point(100, 74)
         Me.lblLineDesc.Name = "lblLineDesc"
         Me.lblLineDesc.Size = New System.Drawing.Size(120, 20)
         Me.lblLineDesc.TabIndex = 5
@@ -332,12 +339,12 @@ Partial Public Class MainForm
         Me.grpBlockLayer.Name = "grpBlockLayer"
         Me.grpBlockLayer.Size = New System.Drawing.Size(240, 118)
         Me.grpBlockLayer.TabIndex = 1
-        Me.grpBlockLayer.TabStop = False
+        Me.grpBlockLayer.TabStop = false
         Me.grpBlockLayer.Text = "图块与图层"
         '
         'chkAutoSelect
         '
-        Me.chkAutoSelect.Checked = True
+        Me.chkAutoSelect.Checked = true
         Me.chkAutoSelect.CheckState = System.Windows.Forms.CheckState.Checked
         Me.chkAutoSelect.Location = New System.Drawing.Point(10, 20)
         Me.chkAutoSelect.Name = "chkAutoSelect"
@@ -396,18 +403,18 @@ Partial Public Class MainForm
         Me.grpOutputOption.Name = "grpOutputOption"
         Me.grpOutputOption.Size = New System.Drawing.Size(240, 153)
         Me.grpOutputOption.TabIndex = 2
-        Me.grpOutputOption.TabStop = False
+        Me.grpOutputOption.TabStop = false
         Me.grpOutputOption.Text = "输出选项"
         '
         'radDirectPlot
         '
-        Me.radDirectPlot.Checked = True
+        Me.radDirectPlot.Checked = true
         Me.radDirectPlot.Location = New System.Drawing.Point(10, 20)
         Me.radDirectPlot.Name = "radDirectPlot"
         Me.radDirectPlot.Size = New System.Drawing.Size(134, 20)
         Me.radDirectPlot.TabIndex = 0
-        Me.radDirectPlot.TabStop = True
-        Me.radDirectPlot.Text = "直接批量打印(1)"
+        Me.radDirectPlot.TabStop = true
+        Me.radDirectPlot.Text = "直接批量打印(&1)"
         '
         'radPlotToFile
         '
@@ -415,7 +422,7 @@ Partial Public Class MainForm
         Me.radPlotToFile.Name = "radPlotToFile"
         Me.radPlotToFile.Size = New System.Drawing.Size(150, 20)
         Me.radPlotToFile.TabIndex = 1
-        Me.radPlotToFile.Text = "打印到文件(2)"
+        Me.radPlotToFile.Text = "打印到文件(&2)"
         '
         'radSplitArchive
         '
@@ -423,7 +430,7 @@ Partial Public Class MainForm
         Me.radSplitArchive.Name = "radSplitArchive"
         Me.radSplitArchive.Size = New System.Drawing.Size(150, 20)
         Me.radSplitArchive.TabIndex = 2
-        Me.radSplitArchive.Text = "图纸拆分归档(3)"
+        Me.radSplitArchive.Text = "图纸拆分归档(&3)"
         '
         'radBatchCreateLayout
         '
@@ -431,7 +438,7 @@ Partial Public Class MainForm
         Me.radBatchCreateLayout.Name = "radBatchCreateLayout"
         Me.radBatchCreateLayout.Size = New System.Drawing.Size(150, 20)
         Me.radBatchCreateLayout.TabIndex = 3
-        Me.radBatchCreateLayout.Text = "批量生成布局(4)"
+        Me.radBatchCreateLayout.Text = "批量生成布局(&4)"
         '
         'radPlotExistingLayout
         '
@@ -439,7 +446,7 @@ Partial Public Class MainForm
         Me.radPlotExistingLayout.Name = "radPlotExistingLayout"
         Me.radPlotExistingLayout.Size = New System.Drawing.Size(120, 20)
         Me.radPlotExistingLayout.TabIndex = 4
-        Me.radPlotExistingLayout.Text = "打印已有布局(5)"
+        Me.radPlotExistingLayout.Text = "打印已有布局(&5)"
         '
         'grpSelectDrawing
         '
@@ -450,7 +457,7 @@ Partial Public Class MainForm
         Me.grpSelectDrawing.Name = "grpSelectDrawing"
         Me.grpSelectDrawing.Size = New System.Drawing.Size(240, 100)
         Me.grpSelectDrawing.TabIndex = 3
-        Me.grpSelectDrawing.TabStop = False
+        Me.grpSelectDrawing.TabStop = false
         Me.grpSelectDrawing.Text = "选择图纸"
         '
         'btnSelectDrawing
@@ -502,7 +509,7 @@ Partial Public Class MainForm
         Me.grpPlotSettings.Name = "grpPlotSettings"
         Me.grpPlotSettings.Size = New System.Drawing.Size(550, 164)
         Me.grpPlotSettings.TabIndex = 4
-        Me.grpPlotSettings.TabStop = False
+        Me.grpPlotSettings.TabStop = false
         Me.grpPlotSettings.Text = "打印设置"
         '
         'lblPreset
@@ -511,7 +518,7 @@ Partial Public Class MainForm
         Me.lblPreset.Name = "lblPreset"
         Me.lblPreset.Size = New System.Drawing.Size(60, 20)
         Me.lblPreset.TabIndex = 0
-        Me.lblPreset.Text = "预配置:"
+        Me.lblPreset.Text = "预设配置:"
         '
         'cmbPreset
         '
@@ -660,12 +667,12 @@ Partial Public Class MainForm
         '
         'radFitToPaper
         '
-        Me.radFitToPaper.Checked = True
+        Me.radFitToPaper.Checked = true
         Me.radFitToPaper.Location = New System.Drawing.Point(6, 45)
         Me.radFitToPaper.Name = "radFitToPaper"
         Me.radFitToPaper.Size = New System.Drawing.Size(80, 20)
         Me.radFitToPaper.TabIndex = 7
-        Me.radFitToPaper.TabStop = True
+        Me.radFitToPaper.TabStop = true
         Me.radFitToPaper.Text = "布满图纸"
         '
         'radFixedScale
@@ -686,7 +693,7 @@ Partial Public Class MainForm
         '
         'chkAutoRotate
         '
-        Me.chkAutoRotate.Checked = True
+        Me.chkAutoRotate.Checked = true
         Me.chkAutoRotate.CheckState = System.Windows.Forms.CheckState.Checked
         Me.chkAutoRotate.Location = New System.Drawing.Point(17, 17)
         Me.chkAutoRotate.Name = "chkAutoRotate"
@@ -704,12 +711,12 @@ Partial Public Class MainForm
         '
         'radAutoCenter
         '
-        Me.radAutoCenter.Checked = True
+        Me.radAutoCenter.Checked = true
         Me.radAutoCenter.Location = New System.Drawing.Point(181, 17)
         Me.radAutoCenter.Name = "radAutoCenter"
         Me.radAutoCenter.Size = New System.Drawing.Size(80, 20)
         Me.radAutoCenter.TabIndex = 13
-        Me.radAutoCenter.TabStop = True
+        Me.radAutoCenter.TabStop = true
         Me.radAutoCenter.Text = "自动居中"
         '
         'radOffset
@@ -756,12 +763,12 @@ Partial Public Class MainForm
         '
         'radSelectOrder
         '
-        Me.radSelectOrder.Checked = True
+        Me.radSelectOrder.Checked = true
         Me.radSelectOrder.Location = New System.Drawing.Point(6, 20)
         Me.radSelectOrder.Name = "radSelectOrder"
         Me.radSelectOrder.Size = New System.Drawing.Size(80, 20)
         Me.radSelectOrder.TabIndex = 20
-        Me.radSelectOrder.TabStop = True
+        Me.radSelectOrder.TabStop = true
         Me.radSelectOrder.Text = "选择顺序"
         '
         'chkReverseOrder
@@ -814,7 +821,7 @@ Partial Public Class MainForm
         Me.grpFileLayout.Name = "grpFileLayout"
         Me.grpFileLayout.Size = New System.Drawing.Size(550, 111)
         Me.grpFileLayout.TabIndex = 25
-        Me.grpFileLayout.TabStop = False
+        Me.grpFileLayout.TabStop = false
         Me.grpFileLayout.Text = "文件/布局名设置"
         '
         'lblSaveLocation
@@ -843,12 +850,12 @@ Partial Public Class MainForm
         '
         'radOtherPath
         '
-        Me.radOtherPath.Checked = True
+        Me.radOtherPath.Checked = true
         Me.radOtherPath.Location = New System.Drawing.Point(342, 25)
         Me.radOtherPath.Name = "radOtherPath"
         Me.radOtherPath.Size = New System.Drawing.Size(80, 20)
         Me.radOtherPath.TabIndex = 3
-        Me.radOtherPath.TabStop = True
+        Me.radOtherPath.TabStop = true
         Me.radOtherPath.Text = "其他路径"
         '
         'lblSavePath
@@ -894,7 +901,7 @@ Partial Public Class MainForm
         '
         Me.txtExtension.Location = New System.Drawing.Point(405, 83)
         Me.txtExtension.Name = "txtExtension"
-        Me.txtExtension.ReadOnly = True
+        Me.txtExtension.ReadOnly = true
         Me.txtExtension.Size = New System.Drawing.Size(50, 21)
         Me.txtExtension.TabIndex = 10
         '
@@ -924,7 +931,7 @@ Partial Public Class MainForm
         '
         'chkModelSpaceScale
         '
-        Me.chkModelSpaceScale.Checked = True
+        Me.chkModelSpaceScale.Checked = true
         Me.chkModelSpaceScale.CheckState = System.Windows.Forms.CheckState.Checked
         Me.chkModelSpaceScale.Location = New System.Drawing.Point(154, 19)
         Me.chkModelSpaceScale.Name = "chkModelSpaceScale"
@@ -942,12 +949,12 @@ Partial Public Class MainForm
         '
         'radAutoRename
         '
-        Me.radAutoRename.Checked = True
+        Me.radAutoRename.Checked = true
         Me.radAutoRename.Location = New System.Drawing.Point(137, 19)
         Me.radAutoRename.Name = "radAutoRename"
         Me.radAutoRename.Size = New System.Drawing.Size(80, 20)
         Me.radAutoRename.TabIndex = 16
-        Me.radAutoRename.TabStop = True
+        Me.radAutoRename.TabStop = true
         Me.radAutoRename.Text = "自动顺延"
         '
         'btnMultiDoc
@@ -981,7 +988,7 @@ Partial Public Class MainForm
         Me.btnOK.Size = New System.Drawing.Size(89, 25)
         Me.btnOK.TabIndex = 29
         Me.btnOK.Text = "确定(&O)"
-        Me.btnOK.UseVisualStyleBackColor = True
+        Me.btnOK.UseVisualStyleBackColor = true
         '
         'btnCancel
         '
@@ -1010,12 +1017,12 @@ Partial Public Class MainForm
         Me.GroupBox1.Name = "GroupBox1"
         Me.GroupBox1.Size = New System.Drawing.Size(263, 94)
         Me.GroupBox1.TabIndex = 32
-        Me.GroupBox1.TabStop = False
+        Me.GroupBox1.TabStop = false
         Me.GroupBox1.Text = "打印比例"
         '
         'Label1
         '
-        Me.Label1.AutoSize = True
+        Me.Label1.AutoSize = true
         Me.Label1.Location = New System.Drawing.Point(129, 73)
         Me.Label1.Name = "Label1"
         Me.Label1.Size = New System.Drawing.Size(17, 12)
@@ -1033,7 +1040,7 @@ Partial Public Class MainForm
         Me.GroupBox2.Name = "GroupBox2"
         Me.GroupBox2.Size = New System.Drawing.Size(281, 94)
         Me.GroupBox2.TabIndex = 33
-        Me.GroupBox2.TabStop = False
+        Me.GroupBox2.TabStop = false
         Me.GroupBox2.Text = "打印顺序"
         '
         'GroupBox3
@@ -1050,7 +1057,7 @@ Partial Public Class MainForm
         Me.GroupBox3.Name = "GroupBox3"
         Me.GroupBox3.Size = New System.Drawing.Size(550, 43)
         Me.GroupBox3.TabIndex = 34
-        Me.GroupBox3.TabStop = False
+        Me.GroupBox3.TabStop = false
         Me.GroupBox3.Text = "图纸定位"
         '
         'GroupBox4
@@ -1061,7 +1068,7 @@ Partial Public Class MainForm
         Me.GroupBox4.Name = "GroupBox4"
         Me.GroupBox4.Size = New System.Drawing.Size(295, 44)
         Me.GroupBox4.TabIndex = 35
-        Me.GroupBox4.TabStop = False
+        Me.GroupBox4.TabStop = false
         Me.GroupBox4.Text = "布局设置"
         '
         'GroupBox5
@@ -1072,7 +1079,7 @@ Partial Public Class MainForm
         Me.GroupBox5.Name = "GroupBox5"
         Me.GroupBox5.Size = New System.Drawing.Size(249, 43)
         Me.GroupBox5.TabIndex = 36
-        Me.GroupBox5.TabStop = False
+        Me.GroupBox5.TabStop = false
         Me.GroupBox5.Text = "重名文件设置"
         '
         'MainForm
@@ -1096,31 +1103,30 @@ Partial Public Class MainForm
         Me.Controls.Add(Me.btnCancel)
         Me.Controls.Add(Me.btnContact)
         Me.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog
-        Me.MaximizeBox = False
-        Me.MinimizeBox = False
+        Me.MaximizeBox = false
+        Me.MinimizeBox = false
         Me.Name = "MainForm"
         Me.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen
         Me.Text = "批量打印"
-        Me.TopMost = True
-        Me.grpFrameType.ResumeLayout(False)
-        Me.grpBlockLayer.ResumeLayout(False)
-        Me.grpBlockLayer.PerformLayout()
-        Me.grpOutputOption.ResumeLayout(False)
-        Me.grpSelectDrawing.ResumeLayout(False)
-        Me.grpPlotSettings.ResumeLayout(False)
-        Me.grpPlotSettings.PerformLayout()
-        Me.grpFileLayout.ResumeLayout(False)
-        Me.grpFileLayout.PerformLayout()
-        Me.GroupBox1.ResumeLayout(False)
-        Me.GroupBox1.PerformLayout()
-        Me.GroupBox2.ResumeLayout(False)
-        Me.GroupBox3.ResumeLayout(False)
-        Me.GroupBox3.PerformLayout()
-        Me.GroupBox4.ResumeLayout(False)
-        Me.GroupBox5.ResumeLayout(False)
-        Me.ResumeLayout(False)
+        Me.grpFrameType.ResumeLayout(false)
+        Me.grpBlockLayer.ResumeLayout(false)
+        Me.grpBlockLayer.PerformLayout
+        Me.grpOutputOption.ResumeLayout(false)
+        Me.grpSelectDrawing.ResumeLayout(false)
+        Me.grpPlotSettings.ResumeLayout(false)
+        Me.grpPlotSettings.PerformLayout
+        Me.grpFileLayout.ResumeLayout(false)
+        Me.grpFileLayout.PerformLayout
+        Me.GroupBox1.ResumeLayout(false)
+        Me.GroupBox1.PerformLayout
+        Me.GroupBox2.ResumeLayout(false)
+        Me.GroupBox3.ResumeLayout(false)
+        Me.GroupBox3.PerformLayout
+        Me.GroupBox4.ResumeLayout(false)
+        Me.GroupBox5.ResumeLayout(false)
+        Me.ResumeLayout(false)
 
-    End Sub
+End Sub
 
     Private Sub LoadSettings()
         Try
@@ -1197,6 +1203,9 @@ Partial Public Class MainForm
             ' 初始化固定比例控件状态（默认不可用，只有选中固定比例时才可用）
             UpdateScaleControls()
 
+            ' 加载上次保存的控件状态
+            LoadUIState()
+
         Catch ex As Exception
             Debug.WriteLine("加载设置失败: " & ex.Message)
         End Try
@@ -1253,7 +1262,7 @@ Partial Public Class MainForm
     Private Sub ApplyPresetConfig(config As Dictionary(Of String, String))
         Try
             ' 打印机（支持 PlotterName 和 PlotDevice 两种键名）
-            Dim plotterName As String = ""
+            Dim plotterName = ""
             If config.ContainsKey("PlotterName") AndAlso Not String.IsNullOrEmpty(config("PlotterName")) Then
                 plotterName = config("PlotterName")
             ElseIf config.ContainsKey("PlotDevice") AndAlso Not String.IsNullOrEmpty(config("PlotDevice")) Then
@@ -1335,6 +1344,11 @@ Partial Public Class MainForm
 
     Private Sub BtnSelectDrawing_Click(sender As Object, e As EventArgs) Handles btnSelectDrawing.Click
         Try
+            ' 验证当前文档是否仍然是启动时的文档
+            If Not ValidateCurrentDocument() Then
+                Return
+            End If
+
             ' 检查是否有活动的 AutoCAD 文档
             Dim doc As Document = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
             If doc Is Nothing Then
@@ -1342,67 +1356,152 @@ Partial Public Class MainForm
                 Return
             End If
 
-            Dim blockName As String = txtBlockName.Text.Trim()
-            Dim layerName As String = txtLayerName.Text.Trim()
-
-            ' 如果勾选自动选择，使用通配符匹配所有
-            If chkAutoSelect.Checked Then
-                blockName = "*"
-                layerName = "*"
-            Else
-                ' 只有输入为空时才使用通配符，保留用户输入的默认值
-                If String.IsNullOrEmpty(blockName) Then
-                    blockName = "*"
-                End If
-                If String.IsNullOrEmpty(layerName) Then
-                    layerName = "*"
-                End If
-            End If
+            ' 重新检测前清理上一批序号标注
+            ClearSequenceOverlay()
 
             ' 创建临时 PlotSettings 对象来传递 TraverseLayouts 设置
             Dim settings As New BatchPlotEngine.PlotSettings()
             settings.TraverseLayouts = chkTraverseLayouts.Checked
 
-            ' 根据图框形式选择识别方式
+            ' 检测阶段始终用通配符匹配所有图框（找出所有可选图框）
             If radBlock.Checked Then
-                ' 图块形式：根据图块名和图层名过滤识别
-                _frames = _plotEngine.DetectFrames(blockName, layerName, settings)
+                _frames = _plotEngine.DetectFrames("*", "*", settings)
             ElseIf radPolyline.Checked Then
-                ' 多段线形式：根据图层名过滤识别
-                _frames = _plotEngine.DetectFramesByPolyline(layerName, settings)
+                _frames = _plotEngine.DetectFramesByPolyline("*", settings)
             ElseIf radLine.Checked Then
-                ' 直线形式：根据图层名过滤识别
-                _frames = _plotEngine.DetectFramesByLine(layerName, settings)
+                _frames = _plotEngine.DetectFramesByLine("*", settings)
             End If
 
-            lblSelectedCount.Text = $"选中图纸: {_frames.Count}"
-
-            ' 根据是否选取到图框来设置亮显按钮的可用性
-            btnHighlight.Enabled = (_frames.Count > 0)
-
-            If _frames.Count > 0 Then
-                Dim frameType As String = If(radBlock.Checked, "图块", If(radPolyline.Checked, "多段线", "直线"))
-                MessageBox.Show($"成功识别 {_frames.Count} 个{frameType}图框", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
-            Else
+            If _frames Is Nothing OrElse _frames.Count = 0 Then
                 Dim msg As String = "未识别到图框，请检查以下设置:" & vbCrLf & vbCrLf
                 If radBlock.Checked Then
-                    msg &= "1. 图框形式: 图块" & vbCrLf
-                    msg &= "2. 当前图块名过滤: " & blockName & vbCrLf
-                    msg &= "3. 当前图层名过滤: " & layerName & vbCrLf & vbCrLf
-                    msg &= "建议: 尝试将图块名设为 * 以匹配所有图块"
+                    msg &= "1. 图框形式: 图块" & vbCrLf & vbCrLf
+                    msg &= "建议: 确认图中有图块参照"
                 ElseIf radPolyline.Checked Then
-                    msg &= "1. 图框形式: 多段线" & vbCrLf
-                    msg &= "2. 当前图层名过滤: " & layerName & vbCrLf & vbCrLf
-                    msg &= "建议: 尝试将图层名设为 * 以匹配所有图层"
+                    msg &= "1. 图框形式: 多段线" & vbCrLf & vbCrLf
+                    msg &= "建议: 确认图中有闭合的4顶点多段线"
                 Else
-                    msg &= "1. 图框形式: 直线" & vbCrLf
-                    msg &= "2. 当前图层名过滤: " & layerName & vbCrLf & vbCrLf
-                    msg &= "建议: 尝试将图层名设为 * 以匹配所有图层"
+                    msg &= "1. 图框形式: 直线" & vbCrLf & vbCrLf
+                    msg &= "建议: 确认图中有4条一组的直线"
                 End If
                 MessageBox.Show(msg, "未识别到图框", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+
+            ' 设置初始选中状态
+            Dim blockName As String = txtBlockName.Text.Trim()
+            Dim layerName As String = txtLayerName.Text.Trim()
+            If String.IsNullOrEmpty(blockName) Then blockName = "*"
+            If String.IsNullOrEmpty(layerName) Then layerName = "*"
+
+            If chkAutoSelect.Checked Then
+                ' 自动选择：符合图块名/图层名条件的图框默认选中
+                _plotEngine.ApplyFilterToFrames(_frames, blockName, layerName)
+            Else
+                ' 手动选择：所有图框默认未选中，完全由用户点选
+                For Each f In _frames
+                    f.IsSelected = False
+                Next
+            End If
+
+            ' 显示高亮标记
+            _plotEngine.UpdateFrameHighlight(_frames)
+
+            ' 隐藏主窗口
+            Hide()
+
+            Dim ed As Editor = doc.Editor
+
+            ' 交互式选择循环
+            Dim selecting As Boolean = True
+            While selecting
+                Dim selectedCount As Integer = _frames.Where(Function(f) f.IsSelected).Count()
+                Dim promptMsg As String = vbLf & $"已选中 {selectedCount}/{_frames.Count} 个图框 - 点选图框切换选中状态 [确认(A)/全选(S)/全不选(D)] <确认>: "
+                Dim opts As New PromptEntityOptions(promptMsg)
+                opts.SetRejectMessage(vbLf & "无效的选择")
+                opts.AllowNone = True
+                opts.Keywords.Add("A")
+                opts.Keywords.Add("S")
+                opts.Keywords.Add("D")
+
+                Dim result As PromptEntityResult = ed.GetEntity(opts)
+
+                If result.Status = PromptStatus.OK Then
+                    ' 用户点选了一个实体，查找对应的图框
+                    Dim matchedFrame As BatchPlotEngine.FrameInfo = Nothing
+
+                    matchedFrame = _plotEngine.FindFrameByPick(_frames, result.ObjectId, result.PickedPoint, radBlock.Checked)
+
+                    If matchedFrame IsNot Nothing Then
+                        ' 切换选中状态
+                        matchedFrame.IsSelected = Not matchedFrame.IsSelected
+                        _plotEngine.UpdateFrameHighlight(_frames)
+                    End If
+
+                ElseIf result.Status = PromptStatus.None Then
+                    ' 用户直接按 Enter → 确认选择
+                    selecting = False
+
+                ElseIf result.Status = PromptStatus.Keyword Then
+                    Select Case result.StringResult
+                        Case "A" ' 确认
+                            selecting = False
+                        Case "S" ' 全部选择
+                            For Each f In _frames
+                                f.IsSelected = True
+                            Next
+                            _plotEngine.UpdateFrameHighlight(_frames)
+                        Case "D" ' 全部取消
+                            For Each f In _frames
+                                f.IsSelected = False
+                            Next
+                            _plotEngine.UpdateFrameHighlight(_frames)
+                    End Select
+
+                Else
+                    ' 用户按 Esc 或取消 → 结束选择
+                    selecting = False
+                End If
+            End While
+
+            ' 清除所有高亮标记
+            _plotEngine.UnhighlightAllFrames(_frames)
+
+            ' 在图上显示打印顺序序号（只标选中的图框）
+            RefreshSequenceOverlay()
+
+            ' 恢复主窗口
+            Show()
+            Activate()
+
+            Dim finalCount As Integer = _frames.Where(Function(f) f.IsSelected).Count()
+            lblSelectedCount.Text = $"选中图纸: {finalCount}/{_frames.Count}"
+
+            ' 根据是否选取到图框来设置亮显按钮的可用性
+            btnHighlight.Enabled = (finalCount > 0)
+
+            ' 更新预览和确定按钮状态
+            UpdatePreviewAndOKButtons()
+
+            If finalCount > 0 Then
+                Dim frameType As String = If(radBlock.Checked, "图块", If(radPolyline.Checked, "多段线", "直线"))
+                MessageBox.Show($"已选中 {finalCount} 个{frameType}图框（共 {_frames.Count} 个）", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Else
+                MessageBox.Show("未选中任何图框", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
             End If
 
         Catch ex As Exception
+            ' 确保恢复窗口
+            Show()
+            ' 确保清除高亮
+            If _frames IsNot Nothing Then
+                Try
+                    _plotEngine.UnhighlightAllFrames(_frames)
+                Catch
+                End Try
+            End If
+            ' 同步清掉序号标注，避免残留
+            ClearSequenceOverlay()
             MessageBox.Show("识别图框失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
     End Sub
@@ -1430,91 +1529,116 @@ Partial Public Class MainForm
                 Return
             End If
 
-            ' 隐藏当前对话框
+            ' 隐藏主窗口
             Hide()
 
-            ' 使用文档锁执行命令
-            Using lock As DocumentLock = doc.LockDocument()
-                ' 发送命令
-                doc.SendStringToExecute("BWK ", True, False, True)
-            End Using
+            Dim ed As Editor = doc.Editor
+            Dim opts As New PromptSelectionOptions()
+            opts.MessageForAdding = vbLf & "选择要创建包围框的对象"
+            opts.AllowDuplicates = False
 
-            ' 使用定时器检测命令是否真正结束
-            ' 包围框命令会打开对话框，需要检测对话框关闭后再等待一段时间确保命令完成
-            Dim checkInterval As Integer = 500 ' 500毫秒检查一次
-            Dim maxWaitTime As Integer = 60000 ' 最大等待60秒
-            Dim elapsedTime As Integer = 0
-            Dim dialogWasDetected As Boolean = False
-            Dim dialogClosedTime As Integer = 0
+            Dim result As PromptSelectionResult = ed.GetSelection(opts)
 
-            Dim timer As New Timer()
-            timer.Interval = checkInterval
-            AddHandler timer.Tick, Sub(s, args)
-                                       Try
-                                           elapsedTime += checkInterval
+            If result.Status = PromptStatus.OK Then
+                ' 询问偏移距离
+                Dim offsetDist As Double = 0
+                Dim distOpts As New PromptDistanceOptions(vbLf & "输入偏移距离（正值扩大，负值缩小）<0>: ")
+                distOpts.AllowNegative = True
+                distOpts.AllowZero = True
+                distOpts.AllowNone = True
+                distOpts.DefaultValue = 0
+                Dim distResult As PromptDoubleResult = ed.GetDistance(distOpts)
 
-                                           ' 查找包围框对话框（如果有的话）
-                                           Dim bwkDialog As IntPtr = FindBoundingBoxDialog()
+                If distResult.Status = PromptStatus.OK Then
+                    offsetDist = distResult.Value
+                ElseIf distResult.Status = PromptStatus.None Then
+                    offsetDist = 0
+                Else
+                    ' 用户取消
+                    Return
+                End If
 
-                                           If bwkDialog <> IntPtr.Zero Then
-                                               ' 检测到对话框已打开
-                                               dialogWasDetected = True
-                                           ElseIf dialogWasDetected Then
-                                               ' 对话框曾经打开过，现在已关闭
-                                               If dialogClosedTime = 0 Then
-                                                   ' 记录对话框关闭时间
-                                                   dialogClosedTime = elapsedTime
-                                               ElseIf elapsedTime - dialogClosedTime >= 1000 Then
-                                                   ' 对话框关闭后等待1秒再恢复主窗体
-                                                   timer.Stop()
-                                                   timer.Dispose()
-                                                   ShowMainForm()
-                                                   Return
-                                               End If
-                                           ElseIf elapsedTime > 3000 Then
-                                               ' 3秒后还没有检测到对话框，直接恢复
-                                               timer.Stop()
-                                               timer.Dispose()
-                                               ShowMainForm()
-                                               Return
-                                           End If
+                ' 非模态窗体回调写数据库必须持文档锁，否则 ForWrite/AppendEntity 抛 eLockViolation
+                Using docLock = doc.LockDocument()
+                Using tr As Transaction = doc.Database.TransactionManager.StartTransaction()
+                    ' 计算包围范围
+                    Dim minPt As New Point3d(Double.MaxValue, Double.MaxValue, Double.MaxValue)
+                    Dim maxPt As New Point3d(Double.MinValue, Double.MinValue, Double.MinValue)
+                    Dim hasValidObject = False
 
-                                           ' 超时检查
-                                           If elapsedTime >= maxWaitTime Then
-                                               timer.Stop()
-                                               timer.Dispose()
-                                               ShowMainForm()
-                                           End If
-                                       Catch ex As Exception
-                                           timer.Stop()
-                                           timer.Dispose()
-                                           ShowMainForm()
-                                       End Try
-                                   End Sub
-            timer.Start()
+                    For Each id As ObjectId In result.Value.GetObjectIds()
+                        Try
+                            Dim ent = CType(tr.GetObject(id, OpenMode.ForRead), Entity)
+                            If ent IsNot Nothing Then
+                                Dim ext As Extents3d = ent.GeometricExtents
+                                minPt = New Point3d(Math.Min(minPt.X, ext.MinPoint.X),
+                                                   Math.Min(minPt.Y, ext.MinPoint.Y),
+                                                   Math.Min(minPt.Z, ext.MinPoint.Z))
+                                maxPt = New Point3d(Math.Max(maxPt.X, ext.MaxPoint.X),
+                                                   Math.Max(maxPt.Y, ext.MaxPoint.Y),
+                                                   Math.Max(maxPt.Z, ext.MaxPoint.Z))
+                                hasValidObject = True
+                            End If
+                        Catch
+                        End Try
+                    Next
+
+                    If hasValidObject Then
+                        Dim bounds As New Extents3d(minPt, maxPt)
+
+                        ' 应用偏移距离
+                        Dim offsetX As Double = offsetDist
+                        Dim offsetY As Double = offsetDist
+                        Dim adjustedMinPt As New Point3d(bounds.MinPoint.X - offsetX, bounds.MinPoint.Y - offsetY, bounds.MinPoint.Z)
+                        Dim adjustedMaxPt As New Point3d(bounds.MaxPoint.X + offsetX, bounds.MaxPoint.Y + offsetY, bounds.MaxPoint.Z)
+
+                        ' 创建包围框多段线
+                        Dim bt = CType(tr.GetObject(doc.Database.BlockTableId, OpenMode.ForRead), BlockTable)
+                        Dim modelSpace = CType(tr.GetObject(bt(BlockTableRecord.ModelSpace), OpenMode.ForWrite), BlockTableRecord)
+
+                        Dim pl As New Polyline()
+                        pl.AddVertexAt(0, New Point2d(adjustedMinPt.X, adjustedMinPt.Y), 0, 0, 0)
+                        pl.AddVertexAt(1, New Point2d(adjustedMaxPt.X, adjustedMinPt.Y), 0, 0, 0)
+                        pl.AddVertexAt(2, New Point2d(adjustedMaxPt.X, adjustedMaxPt.Y), 0, 0, 0)
+                        pl.AddVertexAt(3, New Point2d(adjustedMinPt.X, adjustedMaxPt.Y), 0, 0, 0)
+                        pl.Closed = True
+                        pl.Layer = "0"
+
+                        modelSpace.AppendEntity(pl)
+                        tr.AddNewlyCreatedDBObject(pl, True)
+                        tr.Commit()
+                        ed.WriteMessage(vbLf & "包围框创建成功！")
+                    Else
+                        ed.WriteMessage(vbLf & "无法计算包围框。")
+                    End If
+                End Using
+                End Using
+            End If
 
         Catch ex As Exception
-            MessageBox.Show("执行包围框命令失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            MessageBox.Show("创建包围框失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        Finally
+            ' 恢复主窗口
             Show()
+            Activate()
         End Try
     End Sub
 
-    ' 查找包围框对话框窗口
-    Private Function FindBoundingBoxDialog() As IntPtr
-        ' 包围框对话框的可能标题
-        Dim hwnd As IntPtr = FindWindow(Nothing, "包围框")
-        If hwnd = IntPtr.Zero Then
-            hwnd = FindWindow(Nothing, "Bounding Box")
-        End If
-        If hwnd = IntPtr.Zero Then
-            hwnd = FindWindow(Nothing, "BWK")
-        End If
-        Return hwnd
-    End Function
-
     Private Sub BtnMultiDoc_Click(sender As Object, e As EventArgs) Handles btnMultiDoc.Click
-        ' 传入已选择的文件列表，保持上次的选择
-        Using frm As New MultiDocForm(_multiDocFiles)
+        ' 获取当前文档目录作为默认文件夹
+        Dim defaultFolder As String = Nothing
+        Try
+            Dim doc As Document =
+                Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
+            If doc IsNot Nothing AndAlso Not String.IsNullOrEmpty(doc.Name) Then
+                defaultFolder = Path.GetDirectoryName(doc.Name)
+            End If
+        Catch
+            ' 忽略错误
+        End Try
+
+        ' 传入已选择的文件列表和默认文件夹，保持上次的选择
+        Using frm As New MultiDocForm(_multiDocFiles, defaultFolder)
             If frm.ShowDialog() = DialogResult.OK Then
                 _multiDocFiles = frm.SelectedFiles
                 _useSingleDocStyle = frm.UseSingleDocStyle
@@ -1528,6 +1652,9 @@ Partial Public Class MainForm
 
     Private Sub BtnPreview_Click(sender As Object, e As EventArgs) Handles btnPreview.Click
         Try
+            ' 验证当前文档
+            If Not ValidateCurrentDocument() Then Return
+
             If _frames Is Nothing OrElse _frames.Count = 0 Then
                 MessageBox.Show("请先选择要处理的图纸", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 Return
@@ -1551,14 +1678,17 @@ Partial Public Class MainForm
                 settings.PlotScale = BatchPlotEngine.PlotScaleType.FitToPaper
             Else
                 settings.PlotScale = BatchPlotEngine.PlotScaleType.FixedScale
-                settings.FixedScale = CDbl(Val(txtScale.Text))
+                Dim fixedScale As Double = CDbl(Val(txtScale.Text))
+                If fixedScale <= 0 Then
+                    MessageBox.Show("打印比例必须为大于 0 的数值", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                    Return
+                End If
+                settings.FixedScale = fixedScale
             End If
 
             ' 图纸定位
             settings.AutoRotate = chkAutoRotate.Checked
             settings.Reverse = chkReverse.Checked
-            ' IsLandscape 只在非自动旋转时使用，这里默认使用横向
-            ' 实际方向由用户选择的图纸尺寸决定
             settings.IsLandscape = True
             settings.AutoCenter = radAutoCenter.Checked
             If Not radAutoCenter.Checked Then
@@ -1566,52 +1696,108 @@ Partial Public Class MainForm
                 settings.OffsetY = CDbl(Val(txtOffsetY.Text))
             End If
 
-            ' 将主窗口置后，让AutoCAD窗口显示在前面
-            SendToBack()
-            
-            ' 使用异步执行预览，避免阻塞UI
-            Task.Run(
-                Async Function()
+            ' 按打印顺序排序图框
+            Dim orderType As BatchPlotEngine.PlotOrderType
+            If radLeftRight.Checked Then
+                orderType = BatchPlotEngine.PlotOrderType.LeftRight
+            ElseIf radTopBottom.Checked Then
+                orderType = BatchPlotEngine.PlotOrderType.TopBottom
+            Else
+                orderType = BatchPlotEngine.PlotOrderType.SelectOrder
+            End If
+            _plotEngine.OrderFrames(_frames, orderType, chkReverseOrder.Checked)
+
+            ' 在图上标注打印顺序序号，便于与预览对照
+            RefreshSequenceOverlay()
+
+            ' 隐藏主窗口
+            Hide()
+
+            ' 显示进度窗口（同步，在主线程执行渲染）
+            Dim progressForm As New Form()
+            progressForm.Text = "正在生成预览..."
+            progressForm.Size = New Drawing.Size(400, 120)
+            progressForm.StartPosition = FormStartPosition.CenterScreen
+            progressForm.FormBorderStyle = FormBorderStyle.FixedDialog
+            progressForm.MaximizeBox = False
+            progressForm.MinimizeBox = False
+            progressForm.TopMost = True
+            progressForm.ControlBox = False
+
+            Dim lblProgress As New Label()
+            lblProgress.Text = "正在生成预览..."
+            lblProgress.Location = New Drawing.Point(20, 15)
+            lblProgress.Size = New Drawing.Size(360, 20)
+            lblProgress.Font = New Drawing.Font("Microsoft YaHei UI", 9)
+            progressForm.Controls.Add(lblProgress)
+
+            Dim progressBar As New ProgressBar()
+            progressBar.Location = New Drawing.Point(20, 45)
+            progressBar.Size = New Drawing.Size(360, 25)
+            progressBar.Style = ProgressBarStyle.Continuous
+            progressForm.Controls.Add(progressBar)
+
+            progressForm.Show()
+
+            ' 在主线程同步生成预览图片（AutoCAD API 要求主线程）
+            Dim imagePaths As List(Of String) = Nothing
+            Try
+                imagePaths = _plotEngine.RenderFramesToImages(
+                    _frames,
+                    settings,
+                    Sub(percent, msg)
+                        progressBar.Value = Math.Min(percent, 100)
+                        lblProgress.Text = msg
+                        System.Windows.Forms.Application.DoEvents()
+                    End Sub)
+            Catch ex As Exception
+                progressForm.Close()
+                Show()
+                MessageBox.Show("生成预览失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return
+            End Try
+
+            progressForm.Close()
+
+            ' 显示预览总览窗口
+            Dim previewForm As New PreviewAllForm(imagePaths, _frames)
+            ' 点选预览卡片时联动高亮图上对应的序号标注
+            AddHandler previewForm.CardClicked,
+                Sub(idx As Integer)
+                    If _overlay IsNot Nothing AndAlso idx >= 0 AndAlso idx < _frames.Count Then
+                        _overlay.SetHighlight(_frames(idx))
+                    End If
+                End Sub
+            previewForm.ShowDialog()
+
+            ' 用户点击了预览按钮，关闭窗口后循环预览
+            If previewForm.PendingPreviewIndices IsNot Nothing AndAlso previewForm.PendingPreviewIndices.Count > 0 Then
+                For Each idx In previewForm.PendingPreviewIndices
                     Try
-                        ' 执行预览（在后台线程）
-                        Await Task.Delay(100) ' 给窗口一点时间置后
-                        
-                        ' 使用Invoke在主线程执行预览
-                        Invoke(
-                            Sub()
-                                Try
-                                    _plotEngine.PreviewPlot(_frames(0), settings)
-                                Catch ex As Exception
-                                    MessageBox.Show("预览失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                                End Try
-                            End Sub)
-                        
-                        ' 等待预览完成
-                        Await Task.Delay(500)
-                        
-                        ' 在主线程恢复窗口
-                        Invoke(
-                            Sub()
-                                BringToFront()
-                                Activate()
-                            End Sub)
+                        _plotEngine.PreviewPlot(_frames(idx), settings)
                     Catch ex As Exception
-                        ' 在主线程显示错误
-                        Invoke(
-                            Sub()
-                                MessageBox.Show("预览失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                            End Sub)
+                        MessageBox.Show($"预览图框 {_frames(idx).FrameNumber} 失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
                     End Try
-                End Function)
+                Next
+            End If
+
+            ' 清理临时文件
+            _plotEngine.CleanupPreviewImages()
+            previewForm.Dispose()
+
+            Show()
+            BringToFront()
+            Activate()
 
         Catch ex As Exception
             MessageBox.Show("预览失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Show()
         End Try
     End Sub
 
     Private Sub BtnApply_Click(sender As Object, e As EventArgs) Handles btnApply.Click
         Try
-            SaveSettings()
+            SaveUIState()
             MessageBox.Show("设置已应用", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
         Catch ex As Exception
             MessageBox.Show("应用设置失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -1622,8 +1808,15 @@ Partial Public Class MainForm
         Try
             ' 检查是否有选中的多文档文件
             If _multiDocFiles IsNot Nothing AndAlso _multiDocFiles.Count > 0 Then
+                ' 多文档打印会切换文档，先清掉本文档图上的序号标注
+                ClearSequenceOverlay()
                 ' 执行多文档打印
                 ExecuteMultiDocPlot()
+                Return
+            End If
+
+            ' 验证当前文档是否仍然是启动时的文档
+            If Not ValidateCurrentDocument() Then
                 Return
             End If
 
@@ -1638,8 +1831,10 @@ Partial Public Class MainForm
             settings.PaperSize = If(cmbPaperSize.SelectedItem IsNot Nothing, cmbPaperSize.SelectedItem.ToString(), "")
             settings.PlotStyle = If(cmbPlotStyle.SelectedItem IsNot Nothing, cmbPlotStyle.SelectedItem.ToString(), "")
             settings.OutputPath = GetActualOutputPath()
-            settings.IsLandscape = chkAutoRotate.Checked
-            settings.Copies = CInt(Val(txtCopies.Text))
+            settings.IsLandscape = False ' 方向由 PlotEngine 从 PlotPaperSize 自动判断
+            Dim copies As Integer = CInt(Val(txtCopies.Text))
+            If copies <= 0 Then copies = 1 ' 份数非法时回退 1，避免 0 份导致整批被跳过
+            settings.Copies = copies
             settings.Collate = chkPlotByCopy.Checked
             settings.NameTemplate = txtNameTemplate.Text
             settings.UseDWGName = chkUseDWGName.Checked
@@ -1657,7 +1852,12 @@ Partial Public Class MainForm
                 settings.PlotScale = BatchPlotEngine.PlotScaleType.FitToPaper
             Else
                 settings.PlotScale = BatchPlotEngine.PlotScaleType.FixedScale
-                settings.FixedScale = CDbl(Val(txtScale.Text))
+                Dim fixedScale As Double = CDbl(Val(txtScale.Text))
+                If fixedScale <= 0 Then
+                    MessageBox.Show("打印比例必须为大于 0 的数值", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                    Return
+                End If
+                settings.FixedScale = fixedScale
             End If
 
             ' 图纸定位
@@ -1680,18 +1880,24 @@ Partial Public Class MainForm
             End If
             _plotEngine.OrderFrames(_frames, orderType, chkReverseOrder.Checked)
 
-            ' 输出类型
-            If radPlotToFile.Checked Then
-                settings.OutputType = BatchPlotEngine.OutputFileType.PDF
-            End If
+            ' 在图上标注打印顺序序号（不可打印图层，不影响出图），打印后仍可对照检查
+            RefreshSequenceOverlay()
 
             ' 打印区域
-            If radDirectPlot.Checked Then
+            If radDirectPlot.Checked OrElse radPlotToFile.Checked Then
+                ' 直接打印或打印到文件：使用窗口（图框边界）
                 settings.PlotArea = BatchPlotEngine.PlotAreaType.Window
             ElseIf radPlotExistingLayout.Checked Then
+                ' 打印已有布局：使用布局设置
                 settings.PlotArea = BatchPlotEngine.PlotAreaType.Layout
-            Else
+            ElseIf radBatchCreateLayout.Checked Then
+                ' 批量生成布局：使用窗口（图框边界）
+                settings.PlotArea = BatchPlotEngine.PlotAreaType.Window
+            ElseIf radSplitArchive.Checked Then
+                ' 图纸拆分归档：使用范围
                 settings.PlotArea = BatchPlotEngine.PlotAreaType.Extents
+            Else
+                settings.PlotArea = BatchPlotEngine.PlotAreaType.Window
             End If
 
             ' 打印戳记设置
@@ -1703,6 +1909,9 @@ Partial Public Class MainForm
 
             ' 遍历布局设置
             settings.TraverseLayouts = chkTraverseLayouts.Checked
+
+            ' 保存控件状态
+            SaveUIState()
 
             Dim progressCallback As Action(Of Integer, String) =
                 Sub(progress, message)
@@ -1769,13 +1978,19 @@ Partial Public Class MainForm
                 Else
                     dupHandling2 = BatchPlotEngine.DuplicateFileHandling.AutoRename
                 End If
-                _plotEngine.BatchCreateLayouts(_frames, progressCallback, chkModelSpaceScale.Checked, dupHandling2)
+                _plotEngine.BatchCreateLayouts(_frames, settings, progressCallback, chkModelSpaceScale.Checked, dupHandling2)
+                ' 临时将主窗口置后，避免提示框被挡住
+                Me.TopMost = False
                 MessageBox.Show("批量生成布局任务已提交！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Me.TopMost = True
 
             ElseIf radPlotExistingLayout.Checked Then
                 ' 打印已有布局
                 _plotEngine.PlotExistingLayouts(settings, progressCallback)
+                ' 临时将主窗口置后，避免提示框被挡住
+                Me.TopMost = False
                 MessageBox.Show("打印已有布局任务已提交！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Me.TopMost = True
             End If
 
         Catch ex As Exception
@@ -1791,6 +2006,292 @@ Partial Public Class MainForm
         Debug.WriteLine($"保存路径: {txtSavePath.Text}")
     End Sub
 
+    ''' <summary>
+    ''' 验证当前文档是否仍然是启动时的文档
+    ''' </summary>
+    Private Function ValidateCurrentDocument() As Boolean
+        Try
+            ' 获取当前活动文档
+            Dim currentDoc As Document = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
+            If currentDoc Is Nothing Then
+                MessageBox.Show("当前没有打开的AutoCAD文档", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return False
+            End If
+
+            ' 检查文档是否被切换（比较文档对象引用，而不是名称）
+            If _plotEngine IsNot Nothing AndAlso Not _plotEngine.ValidateCurrentDocument() Then
+                ' 获取当前文档名称（安全地）
+                Dim currentDocName = "未知"
+                Try
+                    currentDocName = currentDoc.Name
+                Catch
+                    currentDocName = "无法获取名称"
+                End Try
+
+                Dim result As DialogResult = MessageBox.Show(
+                    $"当前活动文档已切换或原始文档已关闭。{Environment.NewLine}{Environment.NewLine}是否切换到当前文档继续操作？",
+                    "文档已切换",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning)
+                If result = DialogResult.No Then
+                    Return False
+                End If
+                ' 如果用户选择继续，安全地更新文档引用
+                If _plotEngine IsNot Nothing Then
+                    _plotEngine.SafeUpdateDocument()
+                End If
+            End If
+
+            Return True
+        Catch ex As Exception
+            MessageBox.Show("验证文档时出错: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return False
+        End Try
+    End Function
+
+#Region "UI State Save/Load"
+
+    ''' <summary>
+    ''' 保存控件状态到文件
+    ''' </summary>
+    Private Sub SaveUIState()
+        Try
+            Dim state As New Dictionary(Of String, String)()
+
+            ' 保存输出选项
+            state("OutputOption") = If(radDirectPlot.Checked, "DirectPlot",
+                If(radPlotToFile.Checked, "PlotToFile",
+                If(radSplitArchive.Checked, "SplitArchive",
+                If(radBatchCreateLayout.Checked, "BatchCreateLayout", "PlotExistingLayout"))))
+
+            ' 保存图框形式
+            state("FrameType") = If(radPolyline.Checked, "Polyline",
+                If(radBlock.Checked, "Block", "Line"))
+
+            ' 保存打印设置
+            state("PlotDevice") = If(cmbPlotDevice.SelectedItem IsNot Nothing, cmbPlotDevice.SelectedItem.ToString(), "")
+            state("PaperSize") = If(cmbPaperSize.SelectedItem IsNot Nothing, cmbPaperSize.SelectedItem.ToString(), "")
+            state("PlotStyle") = If(cmbPlotStyle.SelectedItem IsNot Nothing, cmbPlotStyle.SelectedItem.ToString(), "")
+            state("Copies") = txtCopies.Text
+
+            ' 保存打印比例
+            state("PlotScale") = If(radAutoScale.Checked, "AutoScale",
+                If(radFitToPaper.Checked, "FitToPaper", "FixedScale"))
+            state("Scale") = txtScale.Text
+
+            ' 保存图纸定位
+            state("AutoRotate") = chkAutoRotate.Checked.ToString()
+            state("Reverse") = chkReverse.Checked.ToString()
+            state("AutoCenter") = radAutoCenter.Checked.ToString()
+            state("OffsetX") = txtOffsetX.Text
+            state("OffsetY") = txtOffsetY.Text
+
+            ' 保存打印顺序
+            state("PlotOrder") = If(radSelectOrder.Checked, "SelectOrder",
+                If(radLeftRight.Checked, "LeftRight", "TopBottom"))
+            state("ReverseOrder") = chkReverseOrder.Checked.ToString()
+            state("PlotByCopy") = chkPlotByCopy.Checked.ToString()
+
+            ' 保存打印戳记
+            state("PlotStamp") = chkPlotStamp.Checked.ToString()
+
+            ' 保存文件/布局设置
+            state("SaveLocation") = If(radSourcePathPDF.Checked, "SourcePathPDF",
+                If(radSourcePathDWF.Checked, "SourcePathDWF", "OtherPath"))
+            state("SavePath") = txtSavePath.Text
+            state("NameTemplate") = txtNameTemplate.Text
+            state("UseDWGName") = chkUseDWGName.Checked.ToString()
+            state("TraverseLayouts") = chkTraverseLayouts.Checked.ToString()
+            state("DuplicateHandling") = If(radOverwrite.Checked, "Overwrite", "AutoRename")
+
+            ' 保存图块/图层设置
+            state("BlockName") = txtBlockName.Text
+            state("LayerName") = txtLayerName.Text
+            state("AutoSelect") = chkAutoSelect.Checked.ToString()
+            state("ModelSpaceScale") = chkModelSpaceScale.Checked.ToString()
+
+            _plotEngine.SaveConfig(state, "UIState")
+        Catch ex As Exception
+            Debug.WriteLine("保存控件状态失败: " & ex.Message)
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' 从文件加载控件状态
+    ''' </summary>
+    Private Sub LoadUIState()
+        Try
+            Dim state As Dictionary(Of String, String) = _plotEngine.LoadConfig("UIState")
+            If state Is Nothing OrElse state.Count = 0 Then Return
+
+            ' 恢复输出选项
+            If state.ContainsKey("OutputOption") Then
+                Select Case state("OutputOption")
+                    Case "DirectPlot"
+                        radDirectPlot.Checked = True
+                    Case "PlotToFile"
+                        radPlotToFile.Checked = True
+                    Case "SplitArchive"
+                        radSplitArchive.Checked = True
+                    Case "BatchCreateLayout"
+                        radBatchCreateLayout.Checked = True
+                    Case "PlotExistingLayout"
+                        radPlotExistingLayout.Checked = True
+                End Select
+            End If
+
+            ' 恢复图框形式
+            If state.ContainsKey("FrameType") Then
+                Select Case state("FrameType")
+                    Case "Polyline"
+                        radPolyline.Checked = True
+                    Case "Block"
+                        radBlock.Checked = True
+                    Case "Line"
+                        radLine.Checked = True
+                End Select
+            End If
+
+            ' 恢复打印设备
+            If state.ContainsKey("PlotDevice") AndAlso Not String.IsNullOrEmpty(state("PlotDevice")) Then
+                If cmbPlotDevice.Items.Contains(state("PlotDevice")) Then
+                    cmbPlotDevice.SelectedItem = state("PlotDevice")
+                End If
+            End If
+
+            ' 恢复纸张尺寸
+            If state.ContainsKey("PaperSize") AndAlso Not String.IsNullOrEmpty(state("PaperSize")) Then
+                If cmbPaperSize.Items.Contains(state("PaperSize")) Then
+                    cmbPaperSize.SelectedItem = state("PaperSize")
+                End If
+            End If
+
+            ' 恢复打印样式
+            If state.ContainsKey("PlotStyle") AndAlso Not String.IsNullOrEmpty(state("PlotStyle")) Then
+                If cmbPlotStyle.Items.Contains(state("PlotStyle")) Then
+                    cmbPlotStyle.SelectedItem = state("PlotStyle")
+                End If
+            End If
+
+            ' 恢复份数
+            If state.ContainsKey("Copies") Then
+                txtCopies.Text = state("Copies")
+            End If
+
+            ' 恢复打印比例
+            If state.ContainsKey("PlotScale") Then
+                Select Case state("PlotScale")
+                    Case "AutoScale"
+                        radAutoScale.Checked = True
+                    Case "FitToPaper"
+                        radFitToPaper.Checked = True
+                    Case "FixedScale"
+                        radFixedScale.Checked = True
+                End Select
+            End If
+            If state.ContainsKey("Scale") Then
+                txtScale.Text = state("Scale")
+            End If
+
+            ' 恢复图纸定位
+            If state.ContainsKey("AutoRotate") Then
+                chkAutoRotate.Checked = Boolean.Parse(state("AutoRotate"))
+            End If
+            If state.ContainsKey("Reverse") Then
+                chkReverse.Checked = Boolean.Parse(state("Reverse"))
+            End If
+            If state.ContainsKey("AutoCenter") Then
+                radAutoCenter.Checked = Boolean.Parse(state("AutoCenter"))
+                radOffset.Checked = Not Boolean.Parse(state("AutoCenter"))
+            End If
+            If state.ContainsKey("OffsetX") Then
+                txtOffsetX.Text = state("OffsetX")
+            End If
+            If state.ContainsKey("OffsetY") Then
+                txtOffsetY.Text = state("OffsetY")
+            End If
+
+            ' 恢复打印顺序
+            If state.ContainsKey("PlotOrder") Then
+                Select Case state("PlotOrder")
+                    Case "SelectOrder"
+                        radSelectOrder.Checked = True
+                    Case "LeftRight"
+                        radLeftRight.Checked = True
+                    Case "TopBottom"
+                        radTopBottom.Checked = True
+                End Select
+            End If
+            If state.ContainsKey("ReverseOrder") Then
+                chkReverseOrder.Checked = Boolean.Parse(state("ReverseOrder"))
+            End If
+            If state.ContainsKey("PlotByCopy") Then
+                chkPlotByCopy.Checked = Boolean.Parse(state("PlotByCopy"))
+            End If
+
+            ' 恢复打印戳记
+            If state.ContainsKey("PlotStamp") Then
+                chkPlotStamp.Checked = Boolean.Parse(state("PlotStamp"))
+            End If
+
+            ' 恢复文件/布局设置
+            If state.ContainsKey("SaveLocation") Then
+                Select Case state("SaveLocation")
+                    Case "SourcePathPDF"
+                        radSourcePathPDF.Checked = True
+                    Case "SourcePathDWF"
+                        radSourcePathDWF.Checked = True
+                    Case "OtherPath"
+                        radOtherPath.Checked = True
+                End Select
+            End If
+            If state.ContainsKey("SavePath") Then
+                txtSavePath.Text = state("SavePath")
+            End If
+            If state.ContainsKey("NameTemplate") Then
+                txtNameTemplate.Text = state("NameTemplate")
+            End If
+            If state.ContainsKey("UseDWGName") Then
+                chkUseDWGName.Checked = Boolean.Parse(state("UseDWGName"))
+            End If
+            If state.ContainsKey("TraverseLayouts") Then
+                chkTraverseLayouts.Checked = Boolean.Parse(state("TraverseLayouts"))
+            End If
+            If state.ContainsKey("DuplicateHandling") Then
+                If state("DuplicateHandling") = "Overwrite" Then
+                    radOverwrite.Checked = True
+                Else
+                    radAutoRename.Checked = True
+                End If
+            End If
+
+            ' 恢复图块/图层设置
+            If state.ContainsKey("BlockName") Then
+                txtBlockName.Text = state("BlockName")
+            End If
+            If state.ContainsKey("LayerName") Then
+                txtLayerName.Text = state("LayerName")
+            End If
+            If state.ContainsKey("AutoSelect") Then
+                chkAutoSelect.Checked = Boolean.Parse(state("AutoSelect"))
+            End If
+            If state.ContainsKey("ModelSpaceScale") Then
+                chkModelSpaceScale.Checked = Boolean.Parse(state("ModelSpaceScale"))
+            End If
+
+            ' 更新相关控件状态
+            UpdateOutputOptionControls()
+            UpdateOffsetControls()
+            UpdateScaleControls()
+            UpdateSavePathControls()
+
+        Catch ex As Exception
+            Debug.WriteLine("加载控件状态失败: " & ex.Message)
+        End Try
+    End Sub
+
+#End Region
+
     ' 执行多文档打印
     Private Sub ExecuteMultiDocPlot()
         Try
@@ -1802,7 +2303,7 @@ Partial Public Class MainForm
                 settings.PlotterName = If(cmbPlotDevice.SelectedItem IsNot Nothing, cmbPlotDevice.SelectedItem.ToString(), "")
                 settings.PaperSize = If(cmbPaperSize.SelectedItem IsNot Nothing, cmbPaperSize.SelectedItem.ToString(), "")
                 settings.PlotStyle = If(cmbPlotStyle.SelectedItem IsNot Nothing, cmbPlotStyle.SelectedItem.ToString(), "")
-                settings.IsLandscape = chkAutoRotate.Checked
+                settings.IsLandscape = False ' 方向由 PlotEngine 从 PlotPaperSize 自动判断
 
                 ' 打印比例
                 If radAutoScale.Checked Then
@@ -1811,7 +2312,12 @@ Partial Public Class MainForm
                     settings.PlotScale = BatchPlotEngine.PlotScaleType.FitToPaper
                 Else
                     settings.PlotScale = BatchPlotEngine.PlotScaleType.FixedScale
-                    settings.FixedScale = CDbl(Val(txtScale.Text))
+                    Dim fixedScale As Double = CDbl(Val(txtScale.Text))
+                    If fixedScale <= 0 Then
+                        MessageBox.Show("打印比例必须为大于 0 的数值", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                        Return
+                    End If
+                    settings.FixedScale = fixedScale
                 End If
 
                 ' 图纸定位
@@ -1829,7 +2335,9 @@ Partial Public Class MainForm
 
             ' 以下设置不受"使用单文档内部打印样式"影响
             settings.OutputPath = GetActualOutputPath()
-            settings.Copies = CInt(Val(txtCopies.Text))
+            Dim copies As Integer = CInt(Val(txtCopies.Text))
+            If copies <= 0 Then copies = 1 ' 份数非法时回退 1，避免 0 份导致整批被跳过
+            settings.Copies = copies
             settings.Collate = chkPlotByCopy.Checked
             settings.NameTemplate = txtNameTemplate.Text
             settings.UseDWGName = chkUseDWGName.Checked
@@ -1841,7 +2349,12 @@ Partial Public Class MainForm
                 settings.PlotScale = BatchPlotEngine.PlotScaleType.FitToPaper
             Else
                 settings.PlotScale = BatchPlotEngine.PlotScaleType.FixedScale
-                settings.FixedScale = CDbl(Val(txtScale.Text))
+                Dim fixedScale As Double = CDbl(Val(txtScale.Text))
+                If fixedScale <= 0 Then
+                    MessageBox.Show("打印比例必须为大于 0 的数值", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                    Return
+                End If
+                settings.FixedScale = fixedScale
             End If
 
             ' 图纸定位（始终根据界面设置）
@@ -1860,10 +2373,6 @@ Partial Public Class MainForm
             End If
 
             ' 输出类型
-            If radPlotToFile.Checked Then
-                settings.OutputType = BatchPlotEngine.OutputFileType.PDF
-            End If
-
             ' 遍历布局设置
             settings.TraverseLayouts = chkTraverseLayouts.Checked
 
@@ -1921,7 +2430,7 @@ Partial Public Class MainForm
                     ' 按直线识别
                     frames = _plotEngine.DetectFramesByLine(layerName, settings)
                 End If
-                
+
                 If frames Is Nothing OrElse frames.Count = 0 Then
                     Continue For
                 End If
@@ -1937,13 +2446,46 @@ Partial Public Class MainForm
                 End If
                 _plotEngine.OrderFrames(frames, orderType, chkReverseOrder.Checked)
 
-                ' 执行打印
+                ' 根据输出选项执行对应操作
                 Try
-                    ' 批量打印多文件使用DSD方式
-                    settings.DirectPrint = False
-                    _plotEngine.ExecuteBatchPlot(frames, settings, progressCallback)
+                    If radDirectPlot.Checked Then
+                        ' 直接批量打印
+                        settings.DirectPrint = True
+                        _plotEngine.ExecuteBatchPlot(frames, settings, progressCallback)
+                    ElseIf radPlotToFile.Checked Then
+                        ' 打印到文件
+                        settings.DirectPrint = False
+                        _plotEngine.ExecuteBatchPlot(frames, settings, progressCallback)
+                    ElseIf radSplitArchive.Checked Then
+                        ' 图纸拆分归档
+                        Dim archivePath As String = GetActualOutputPath()
+                        If String.IsNullOrEmpty(archivePath) Then
+                            archivePath = Path.GetDirectoryName(filePath)
+                        End If
+                        Dim dupHandling As BatchPlotEngine.DuplicateFileHandling
+                        If radOverwrite.Checked Then
+                            dupHandling = BatchPlotEngine.DuplicateFileHandling.Overwrite
+                        Else
+                            dupHandling = BatchPlotEngine.DuplicateFileHandling.AutoRename
+                        End If
+                        _plotEngine.SplitAndArchive(frames, archivePath, txtNameTemplate.Text, chkUseDWGName.Checked, progressCallback, dupHandling)
+                    ElseIf radBatchCreateLayout.Checked Then
+                        ' 批量生成布局
+                        Dim dupHandling2 As BatchPlotEngine.DuplicateFileHandling
+                        If radOverwrite.Checked Then
+                            dupHandling2 = BatchPlotEngine.DuplicateFileHandling.Overwrite
+                        Else
+                            dupHandling2 = BatchPlotEngine.DuplicateFileHandling.AutoRename
+                        End If
+                        _plotEngine.BatchCreateLayouts(frames, settings, progressCallback, chkModelSpaceScale.Checked, dupHandling2)
+                    ElseIf radPlotExistingLayout.Checked Then
+                        ' 打印已有布局
+                        settings.DirectPrint = True
+                        _plotEngine.PlotExistingLayouts(settings, progressCallback)
+                    End If
                 Catch ex As Exception
-                    ' 打印失败，继续下一个文件
+                    ' 操作失败，继续下一个文件
+                    Logger.GetInstance().Error($"处理文件 {fileName} 失败", ex)
                 End Try
 
                 ' 更新进度
@@ -1963,7 +2505,7 @@ Partial Public Class MainForm
     ' 打开文档
     Private Function OpenDocument(filePath As String) As Document
         Try
-            Dim docMgr As DocumentCollection = 
+            Dim docMgr As DocumentCollection =
                 Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager
 
             ' 检查文件是否已经打开
@@ -1984,6 +2526,62 @@ Partial Public Class MainForm
 
     Private Sub BtnCancel_Click(sender As Object, e As EventArgs) Handles btnCancel.Click
         Close()
+    End Sub
+
+    ' ========== 图框序号标注（借鉴 batchPrintZWCAD 的 TemporarySequenceOverlay） ==========
+
+    ' 按当前列表顺序在图上为选中的图框标注序号（选择确认/预览/打印前调用）
+    Private Sub RefreshSequenceOverlay()
+        Try
+            Dim doc As Document = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
+            If doc Is Nothing Then Return
+
+            If _frames Is Nothing OrElse _frames.Count = 0 OrElse
+               Not _frames.Any(Function(f) f.IsSelected) Then
+                ClearSequenceOverlay()
+                Return
+            End If
+
+            ' 活动文档已切换时，先丢弃旧文档上的标注再重建
+            If _overlay IsNot Nothing AndAlso Not Object.ReferenceEquals(_overlayDoc, doc) Then
+                _overlay.Dispose()
+                _overlay = Nothing
+                _overlayDoc = Nothing
+            End If
+
+            If _overlay Is Nothing Then
+                _overlay = New FrameSequenceOverlay(doc)
+                _overlayDoc = doc
+            End If
+
+            ' OrderFrames 之后列表顺序即打印顺序，序号只标选中的图框
+            _overlay.Show(_frames.Where(Function(f) f.IsSelected).ToList())
+        Catch
+            ' 标注失败不影响打印主流程
+        End Try
+    End Sub
+
+    ' 清除图上的序号标注（重新检测/识别失败/切换多文档前调用）
+    Private Sub ClearSequenceOverlay()
+        Try
+            If _overlay IsNot Nothing Then
+                _overlay.Clear(False)
+            End If
+        Catch
+        End Try
+    End Sub
+
+    Private Sub MainForm_FormClosing(sender As Object, e As FormClosingEventArgs) Handles MyBase.FormClosing
+        ' 关闭窗口时清掉图上的临时标注，不留痕迹
+        Try
+            If _overlay IsNot Nothing Then
+                _overlay.Clear()
+                _overlay.Dispose()
+                _overlay = Nothing
+                _overlayDoc = Nothing
+            End If
+        Catch
+        End Try
     End Sub
 
     Private Sub BtnContact_Click(sender As Object, e As EventArgs) Handles btnContact.Click
@@ -2342,10 +2940,10 @@ Partial Public Class MainForm
 
             ' 使用定时器检测打印戳记对话框是否关闭
             ' 打印戳记对话框的类名为 "AcDbPlotStampDlg" 或包含 "PlotStamp"
-            Dim checkInterval As Integer = 500 ' 500毫秒检查一次
-            Dim maxWaitTime As Integer = 60000 ' 最大等待60秒
-            Dim elapsedTime As Integer = 0
-            Dim dialogDetected As Boolean = False
+            Dim checkInterval = 500 ' 500毫秒检查一次
+            Dim maxWaitTime = 60000 ' 最大等待60秒
+            Dim elapsedTime = 0
+            Dim dialogDetected = False
 
             Dim timer As New Timer()
             timer.Interval = checkInterval
@@ -2407,7 +3005,7 @@ Partial Public Class MainForm
     Private Function FindWindowByClassPattern(pattern As String) As IntPtr
         Dim result As IntPtr = IntPtr.Zero
         EnumWindows(Function(hWnd As IntPtr, lParam As IntPtr)
-                        Dim className As New System.Text.StringBuilder(256)
+                        Dim className As New Text.StringBuilder(256)
                         GetClassName(hWnd, className, className.Capacity)
                         If className.ToString().Contains(pattern) Then
                             result = hWnd
@@ -2421,8 +3019,8 @@ Partial Public Class MainForm
     ' 安全显示主窗体
     Private Sub ShowMainForm()
         Try
-            If Me.InvokeRequired Then
-                Me.Invoke(New Action(Sub() Show()))
+            If InvokeRequired Then
+                Invoke(New Action(Sub() Show()))
             Else
                 Show()
             End If
@@ -2468,6 +3066,10 @@ Partial Public Class MainForm
             txtExtension.Text = ""
             btnVariables.Enabled = False
             chkUseDWGName.Enabled = False
+            ' 禁用保存位置选项（源文件路径\PDF、源文件路径\DWF、其他路径）
+            radSourcePathPDF.Enabled = False
+            radSourcePathDWF.Enabled = False
+            radOtherPath.Enabled = False
         ElseIf radPlotToFile.Checked Then
             ' 打印到文件：根据打印机决定扩展名
             chkModelSpaceScale.Enabled = False
@@ -2544,6 +3146,10 @@ Partial Public Class MainForm
             btnBrowsePath.Enabled = False
             chkPlotStamp.Enabled = False
             btnPlotStamp.Enabled = False
+            ' 禁用保存位置选项（源文件路径\PDF、源文件路径\DWF、其他路径）
+            radSourcePathPDF.Enabled = False
+            radSourcePathDWF.Enabled = False
+            radOtherPath.Enabled = False
         ElseIf radPlotExistingLayout.Checked Then
             ' 打印已有布局：禁用遍历布局、模型空间线型比例、覆盖重名、自动顺延、打印份数
             ' 禁用保存位置地址和名称样板地址及其右侧按钮
@@ -2563,6 +3169,10 @@ Partial Public Class MainForm
             txtExtension.Text = ""
             btnVariables.Enabled = False
             chkUseDWGName.Enabled = False
+            ' 禁用保存位置选项（源文件路径\PDF、源文件路径\DWF、其他路径）
+            radSourcePathPDF.Enabled = False
+            radSourcePathDWF.Enabled = False
+            radOtherPath.Enabled = False
             ' 禁用图框形式中的所有控件
             radPolyline.Enabled = False
             radBlock.Enabled = False
@@ -2618,6 +3228,29 @@ Partial Public Class MainForm
             lblOffsetX.Enabled = False
             txtOffsetY.Enabled = False
             lblOffsetY.Enabled = False
+        End If
+
+        ' 更新预览和确定按钮状态
+        UpdatePreviewAndOKButtons()
+    End Sub
+
+    ' 更新预览和确定按钮状态
+    ' 直接批量打印、打印到文件、图纸拆分归档、批量生成布局：需要选中图框才启用预览和确定
+    ' 打印已有布局：始终禁用预览，确定按钮始终启用
+    Private Sub UpdatePreviewAndOKButtons()
+        If radPlotExistingLayout.Checked Then
+            ' 打印已有布局：禁用预览，确定按钮始终启用
+            btnPreview.Enabled = False
+            btnOK.Enabled = True
+        ElseIf radDirectPlot.Checked OrElse radPlotToFile.Checked OrElse radSplitArchive.Checked OrElse radBatchCreateLayout.Checked Then
+            ' 这些模式需要选中图框才启用预览和确定
+            Dim hasFrames As Boolean = (_frames IsNot Nothing AndAlso _frames.Count > 0)
+            btnPreview.Enabled = hasFrames
+            btnOK.Enabled = hasFrames
+        Else
+            ' 默认状态
+            btnPreview.Enabled = True
+            btnOK.Enabled = True
         End If
     End Sub
 
@@ -2688,6 +3321,10 @@ Partial Public Class MainForm
         txtExtension.Enabled = True
         btnVariables.Enabled = True
         chkUseDWGName.Enabled = True
+        ' 保存位置选项（源文件路径\PDF、源文件路径\DWF、其他路径）
+        radSourcePathPDF.Enabled = True
+        radSourcePathDWF.Enabled = True
+        radOtherPath.Enabled = True
     End Sub
 
     ' 图块设置 - 设置图框图块对应的纸张
@@ -2713,10 +3350,10 @@ Partial Public Class MainForm
             Using form As New NameTemplateForm()
                 If form.ShowDialog(Me) = DialogResult.OK Then
                     ' 将选中的模板追加到文本框
-                    If String.IsNullOrEmpty(txtNameTemplate.Text) OrElse txtNameTemplate.Text = "<DWGNAME>" Then
+                    If String.IsNullOrEmpty(txtNameTemplate.Text) Then
                         txtNameTemplate.Text = form.SelectedTemplate
                     Else
-                        txtNameTemplate.Text = txtNameTemplate.Text & "_" & form.SelectedTemplate
+                        txtNameTemplate.Text = txtNameTemplate.Text & form.SelectedTemplate
                     End If
                 End If
             End Using
@@ -2752,11 +3389,14 @@ Partial Public Class MainForm
     ' 点选图块参照
     Private Sub PickBlockReference(doc As Document)
         Try
+            ' 隐藏主窗口，切换到CAD
+            Hide()
+
             Dim ed As Editor = doc.Editor
 
             ' 提示用户选择图块
-            Dim opts As New PromptEntityOptions("选择图框图块")
-            opts.SetRejectMessage("请选择图块参照")
+            Dim opts As New PromptEntityOptions(vbLf & "选择图框图块")
+            opts.SetRejectMessage(vbLf & "请选择图块参照")
             opts.AddAllowedClass(GetType(BlockReference), True)
 
             Dim result As PromptEntityResult = ed.GetEntity(opts)
@@ -2770,8 +3410,6 @@ Partial Public Class MainForm
                         ' 填充图块名和图层名
                         txtBlockName.Text = btr.Name
                         txtLayerName.Text = br.Layer
-
-                        MessageBox.Show($"已选择图块: {btr.Name}" & vbCrLf & $"图层: {br.Layer}", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
                     End If
                     tr.Commit()
                 End Using
@@ -2779,17 +3417,24 @@ Partial Public Class MainForm
 
         Catch ex As Exception
             MessageBox.Show("点选图块失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        Finally
+            ' 恢复主窗口
+            Show()
+            Activate()
         End Try
     End Sub
 
     ' 点选图层
     Private Sub PickLayer(doc As Document)
         Try
+            ' 隐藏主窗口，切换到CAD
+            Hide()
+
             Dim ed As Editor = doc.Editor
 
             ' 提示用户选择对象来获取图层
-            Dim opts As New PromptEntityOptions("选择图框对象以获取图层")
-            opts.SetRejectMessage("请选择有效的对象")
+            Dim opts As New PromptEntityOptions(vbLf & "选择图框对象以获取图层")
+            opts.SetRejectMessage(vbLf & "请选择有效的对象")
 
             Dim result As PromptEntityResult = ed.GetEntity(opts)
 
@@ -2799,8 +3444,6 @@ Partial Public Class MainForm
                     If ent IsNot Nothing Then
                         ' 填充图层名
                         txtLayerName.Text = ent.Layer
-
-                        MessageBox.Show($"已选择图层: {ent.Layer}", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
                     End If
                     tr.Commit()
                 End Using
@@ -2808,6 +3451,10 @@ Partial Public Class MainForm
 
         Catch ex As Exception
             MessageBox.Show("点选图层失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        Finally
+            ' 恢复主窗口
+            Show()
+            Activate()
         End Try
     End Sub
 
@@ -2868,69 +3515,69 @@ Partial Public Class MainForm
     ' 为TextBox添加数字验证
     Private Sub AddNumericValidation(txt As TextBox, allowDecimal As Boolean)
         AddHandler txt.KeyPress, Sub(sender As Object, e As KeyPressEventArgs)
-            ' 允许退格键
-            If e.KeyChar = ChrW(Keys.Back) Then
-                Return
-            End If
-            
-            ' 允许负号（只能在开头）
-            If e.KeyChar = "-"c Then
-                If txt.SelectionStart = 0 AndAlso Not txt.Text.Contains("-") Then
-                    Return
-                End If
-                e.Handled = True
-                Return
-            End If
-            
-            ' 允许小数点（仅当允许小数时）
-            If allowDecimal AndAlso (e.KeyChar = "."c OrElse e.KeyChar = ","c) Then
-                If Not txt.Text.Contains(".") AndAlso Not txt.Text.Contains(",") Then
-                    e.KeyChar = "."c
-                    Return
-                End If
-                e.Handled = True
-                Return
-            End If
-            
-            ' 只允许数字
-            If Not Char.IsDigit(e.KeyChar) Then
-                e.Handled = True
-            End If
-        End Sub
-        
+                                     ' 允许退格键
+                                     If e.KeyChar = ChrW(Keys.Back) Then
+                                         Return
+                                     End If
+
+                                     ' 允许负号（只能在开头）
+                                     If e.KeyChar = "-"c Then
+                                         If txt.SelectionStart = 0 AndAlso Not txt.Text.Contains("-") Then
+                                             Return
+                                         End If
+                                         e.Handled = True
+                                         Return
+                                     End If
+
+                                     ' 允许小数点（仅当允许小数时）
+                                     If allowDecimal AndAlso (e.KeyChar = "."c OrElse e.KeyChar = ","c) Then
+                                         If Not txt.Text.Contains(".") AndAlso Not txt.Text.Contains(",") Then
+                                             e.KeyChar = "."c
+                                             Return
+                                         End If
+                                         e.Handled = True
+                                         Return
+                                     End If
+
+                                     ' 只允许数字
+                                     If Not Char.IsDigit(e.KeyChar) Then
+                                         e.Handled = True
+                                     End If
+                                 End Sub
+
         ' 失去焦点时验证
         AddHandler txt.LostFocus, Sub(sender As Object, e As EventArgs)
-            If String.IsNullOrWhiteSpace(txt.Text) Then
-                txt.Text = "0"
-            Else
-                ' 尝试解析为数字
-                Dim value As Double
-                If Double.TryParse(txt.Text, value) Then
-                    If allowDecimal Then
-                        txt.Text = value.ToString()
-                    Else
-                        txt.Text = CInt(value).ToString()
-                    End If
-                Else
-                    txt.Text = "0"
-                End If
-            End If
-        End Sub
+                                      If String.IsNullOrWhiteSpace(txt.Text) Then
+                                          txt.Text = "0"
+                                      Else
+                                          ' 尝试解析为数字
+                                          Dim value As Double
+                                          If Double.TryParse(txt.Text, value) Then
+                                              If allowDecimal Then
+                                                  txt.Text = value.ToString()
+                                              Else
+                                                  txt.Text = CInt(value).ToString()
+                                              End If
+                                          Else
+                                              txt.Text = "0"
+                                          End If
+                                      End If
+                                  End Sub
     End Sub
 
     ' 根据打印设备设置扩展名
     Private Sub UpdateExtensionByPlotter()
         Try
-            Dim plotterName As String = ""
+            Dim plotterName = ""
             If cmbPlotDevice.SelectedItem IsNot Nothing Then
                 plotterName = cmbPlotDevice.SelectedItem.ToString()
             End If
-            
+
             If String.IsNullOrEmpty(plotterName) OrElse plotterName = "无" Then
                 txtExtension.Text = ".plt"
                 Return
             End If
-            
+
             ' 根据打印机名称判断扩展名
             Dim plotterNameLower As String = plotterName.ToLower()
             If plotterNameLower.Contains("pdf") Then
@@ -2959,14 +3606,16 @@ Partial Public Class MainForm
 
     ' 输出类型改变时更新扩展名
     Private Sub RadSourcePathPDF_CheckedChanged(sender As Object, e As EventArgs) Handles radSourcePathPDF.CheckedChanged
-        If radPlotToFile.Checked AndAlso radSourcePathPDF.Checked Then
-            UpdateExtensionByPlotter()
+        If radSourcePathPDF.Checked Then
+            txtSavePath.Text = GetActualOutputPath()
+            UpdateSavePathControls()
         End If
     End Sub
 
     Private Sub RadSourcePathDWF_CheckedChanged(sender As Object, e As EventArgs) Handles radSourcePathDWF.CheckedChanged
-        If radPlotToFile.Checked AndAlso radSourcePathDWF.Checked Then
-            UpdateExtensionByPlotter()
+        If radSourcePathDWF.Checked Then
+            txtSavePath.Text = GetActualOutputPath()
+            UpdateSavePathControls()
         End If
     End Sub
 

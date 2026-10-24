@@ -1,4 +1,3 @@
-Imports System.Drawing
 Imports System.IO
 Imports System.Windows.Forms
 
@@ -7,7 +6,7 @@ Public Class MultiDocForm
 
     ' 文件夹选择
     Private lblFolder As Label
-    Private txtFolder As TextBox
+    Private WithEvents txtFolder As TextBox
     Private WithEvents btnBrowse As Button
 
     ' 选项
@@ -45,146 +44,170 @@ Public Class MultiDocForm
 
     ' 默认构造函数
     Public Sub New()
-        Me.New(Nothing)
+        Me.New(Nothing, Nothing)
     End Sub
 
     ' 带已选择文件的构造函数
     Public Sub New(initialSelectedFiles As List(Of String))
+        Me.New(initialSelectedFiles, Nothing)
+    End Sub
+
+    ' 带已选择文件和默认文件夹的构造函数
+    Public Sub New(initialSelectedFiles As List(Of String), defaultFolder As String)
         InitializeComponent()
         _files = New List(Of String)()
         _selectedFiles = New List(Of String)()
         _initialSelectedFiles = initialSelectedFiles
+
+        ' 设置默认文件夹路径
+        If Not String.IsNullOrEmpty(defaultFolder) AndAlso Directory.Exists(defaultFolder) Then
+            txtFolder.Text = defaultFolder
+        Else
+            ' 尝试获取当前打开文档的目录
+            Try
+                Dim doc As Autodesk.AutoCAD.ApplicationServices.Document =
+                    Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
+                If doc IsNot Nothing AndAlso Not String.IsNullOrEmpty(doc.Name) Then
+                    Dim docDir As String = Path.GetDirectoryName(doc.Name)
+                    If Directory.Exists(docDir) Then
+                        txtFolder.Text = docDir
+                    End If
+                End If
+            Catch
+                ' 忽略错误，使用默认路径
+            End Try
+        End If
     End Sub
 
     Private Sub InitializeComponent()
-        Me.lblFolder = New System.Windows.Forms.Label()
-        Me.txtFolder = New System.Windows.Forms.TextBox()
-        Me.btnBrowse = New System.Windows.Forms.Button()
-        Me.chkOpenDocuments = New System.Windows.Forms.CheckBox()
-        Me.chkUseSingleDocStyle = New System.Windows.Forms.CheckBox()
-        Me.lstFiles = New System.Windows.Forms.ListBox()
-        Me.lstSelectedFiles = New System.Windows.Forms.ListBox()
-        Me.btnAdd = New System.Windows.Forms.Button()
-        Me.btnRemove = New System.Windows.Forms.Button()
-        Me.btnOK = New System.Windows.Forms.Button()
-        Me.btnCancel = New System.Windows.Forms.Button()
-        Me.SuspendLayout()
+        lblFolder = New Label()
+        txtFolder = New TextBox()
+        btnBrowse = New Button()
+        chkOpenDocuments = New CheckBox()
+        chkUseSingleDocStyle = New CheckBox()
+        lstFiles = New ListBox()
+        lstSelectedFiles = New ListBox()
+        btnAdd = New Button()
+        btnRemove = New Button()
+        btnOK = New Button()
+        btnCancel = New Button()
+        SuspendLayout()
         '
         'lblFolder
         '
-        Me.lblFolder.Location = New System.Drawing.Point(12, 15)
-        Me.lblFolder.Name = "lblFolder"
-        Me.lblFolder.Size = New System.Drawing.Size(50, 20)
-        Me.lblFolder.TabIndex = 0
-        Me.lblFolder.Text = "文件夹:"
+        lblFolder.Location = New Drawing.Point(12, 15)
+        lblFolder.Name = "lblFolder"
+        lblFolder.Size = New Drawing.Size(50, 20)
+        lblFolder.TabIndex = 0
+        lblFolder.Text = "文件夹:"
         '
         'txtFolder
         '
-        Me.txtFolder.Location = New System.Drawing.Point(65, 12)
-        Me.txtFolder.Name = "txtFolder"
-        Me.txtFolder.Size = New System.Drawing.Size(480, 21)
-        Me.txtFolder.TabIndex = 1
-        Me.txtFolder.Text = "C:\Users\jiazheng\桌面"
+        txtFolder.Location = New Drawing.Point(65, 12)
+        txtFolder.Name = "txtFolder"
+        txtFolder.Size = New Drawing.Size(480, 21)
+        txtFolder.TabIndex = 1
+        txtFolder.Text = "C:\Users\jiazheng\桌面"
         '
         'btnBrowse
         '
-        Me.btnBrowse.Location = New System.Drawing.Point(555, 10)
-        Me.btnBrowse.Name = "btnBrowse"
-        Me.btnBrowse.Size = New System.Drawing.Size(60, 25)
-        Me.btnBrowse.TabIndex = 2
-        Me.btnBrowse.Text = "浏览..."
+        btnBrowse.Location = New Drawing.Point(555, 10)
+        btnBrowse.Name = "btnBrowse"
+        btnBrowse.Size = New Drawing.Size(60, 25)
+        btnBrowse.TabIndex = 2
+        btnBrowse.Text = "浏览..."
         '
         'chkOpenDocuments
         '
-        Me.chkOpenDocuments.Location = New System.Drawing.Point(12, 45)
-        Me.chkOpenDocuments.Name = "chkOpenDocuments"
-        Me.chkOpenDocuments.Size = New System.Drawing.Size(100, 20)
-        Me.chkOpenDocuments.TabIndex = 3
-        Me.chkOpenDocuments.Text = "打开的文档"
+        chkOpenDocuments.Location = New Drawing.Point(12, 45)
+        chkOpenDocuments.Name = "chkOpenDocuments"
+        chkOpenDocuments.Size = New Drawing.Size(100, 20)
+        chkOpenDocuments.TabIndex = 3
+        chkOpenDocuments.Text = "打开的文档"
         '
         'chkUseSingleDocStyle
         '
-        Me.chkUseSingleDocStyle.Location = New System.Drawing.Point(400, 45)
-        Me.chkUseSingleDocStyle.Name = "chkUseSingleDocStyle"
-        Me.chkUseSingleDocStyle.Size = New System.Drawing.Size(180, 20)
-        Me.chkUseSingleDocStyle.TabIndex = 4
-        Me.chkUseSingleDocStyle.Text = "使用单文档内部打印样式"
+        chkUseSingleDocStyle.Location = New Drawing.Point(400, 45)
+        chkUseSingleDocStyle.Name = "chkUseSingleDocStyle"
+        chkUseSingleDocStyle.Size = New Drawing.Size(180, 20)
+        chkUseSingleDocStyle.TabIndex = 4
+        chkUseSingleDocStyle.Text = "使用单文档内部打印样式"
         '
         'lstFiles
         '
-        Me.lstFiles.ItemHeight = 12
-        Me.lstFiles.Location = New System.Drawing.Point(12, 75)
-        Me.lstFiles.Name = "lstFiles"
-        Me.lstFiles.SelectionMode = System.Windows.Forms.SelectionMode.MultiExtended
-        Me.lstFiles.Size = New System.Drawing.Size(280, 316)
-        Me.lstFiles.TabIndex = 5
+        lstFiles.ItemHeight = 12
+        lstFiles.Location = New Drawing.Point(12, 75)
+        lstFiles.Name = "lstFiles"
+        lstFiles.SelectionMode = SelectionMode.MultiExtended
+        lstFiles.Size = New Drawing.Size(280, 316)
+        lstFiles.TabIndex = 5
         '
         'lstSelectedFiles
         '
-        Me.lstSelectedFiles.ItemHeight = 12
-        Me.lstSelectedFiles.Location = New System.Drawing.Point(340, 75)
-        Me.lstSelectedFiles.Name = "lstSelectedFiles"
-        Me.lstSelectedFiles.SelectionMode = System.Windows.Forms.SelectionMode.MultiExtended
-        Me.lstSelectedFiles.Size = New System.Drawing.Size(280, 316)
-        Me.lstSelectedFiles.TabIndex = 6
+        lstSelectedFiles.ItemHeight = 12
+        lstSelectedFiles.Location = New Drawing.Point(340, 75)
+        lstSelectedFiles.Name = "lstSelectedFiles"
+        lstSelectedFiles.SelectionMode = SelectionMode.MultiExtended
+        lstSelectedFiles.Size = New Drawing.Size(280, 316)
+        lstSelectedFiles.TabIndex = 6
         '
         'btnAdd
         '
-        Me.btnAdd.Location = New System.Drawing.Point(90, 405)
-        Me.btnAdd.Name = "btnAdd"
-        Me.btnAdd.Size = New System.Drawing.Size(120, 30)
-        Me.btnAdd.TabIndex = 7
-        Me.btnAdd.Text = "添加文件"
+        btnAdd.Location = New Drawing.Point(90, 405)
+        btnAdd.Name = "btnAdd"
+        btnAdd.Size = New Drawing.Size(120, 30)
+        btnAdd.TabIndex = 7
+        btnAdd.Text = "添加文件"
         '
         'btnRemove
         '
-        Me.btnRemove.Location = New System.Drawing.Point(420, 405)
-        Me.btnRemove.Name = "btnRemove"
-        Me.btnRemove.Size = New System.Drawing.Size(120, 30)
-        Me.btnRemove.TabIndex = 8
-        Me.btnRemove.Text = "移除文件"
+        btnRemove.Location = New Drawing.Point(420, 405)
+        btnRemove.Name = "btnRemove"
+        btnRemove.Size = New Drawing.Size(120, 30)
+        btnRemove.TabIndex = 8
+        btnRemove.Text = "移除文件"
         '
         'btnOK
         '
-        Me.btnOK.DialogResult = System.Windows.Forms.DialogResult.OK
-        Me.btnOK.Location = New System.Drawing.Point(200, 445)
-        Me.btnOK.Name = "btnOK"
-        Me.btnOK.Size = New System.Drawing.Size(100, 30)
-        Me.btnOK.TabIndex = 9
-        Me.btnOK.Text = "确定"
+        btnOK.DialogResult = DialogResult.OK
+        btnOK.Location = New Drawing.Point(200, 445)
+        btnOK.Name = "btnOK"
+        btnOK.Size = New Drawing.Size(100, 30)
+        btnOK.TabIndex = 9
+        btnOK.Text = "确定"
         '
         'btnCancel
         '
-        Me.btnCancel.DialogResult = System.Windows.Forms.DialogResult.Cancel
-        Me.btnCancel.Location = New System.Drawing.Point(350, 445)
-        Me.btnCancel.Name = "btnCancel"
-        Me.btnCancel.Size = New System.Drawing.Size(100, 30)
-        Me.btnCancel.TabIndex = 10
-        Me.btnCancel.Text = "取消"
+        btnCancel.DialogResult = DialogResult.Cancel
+        btnCancel.Location = New Drawing.Point(350, 445)
+        btnCancel.Name = "btnCancel"
+        btnCancel.Size = New Drawing.Size(100, 30)
+        btnCancel.TabIndex = 10
+        btnCancel.Text = "取消"
         '
         'MultiDocForm
         '
-        Me.ClientSize = New System.Drawing.Size(634, 481)
-        Me.Controls.Add(Me.lblFolder)
-        Me.Controls.Add(Me.txtFolder)
-        Me.Controls.Add(Me.btnBrowse)
-        Me.Controls.Add(Me.chkOpenDocuments)
-        Me.Controls.Add(Me.chkUseSingleDocStyle)
-        Me.Controls.Add(Me.lstFiles)
-        Me.Controls.Add(Me.lstSelectedFiles)
-        Me.Controls.Add(Me.btnAdd)
-        Me.Controls.Add(Me.btnRemove)
-        Me.Controls.Add(Me.btnOK)
-        Me.Controls.Add(Me.btnCancel)
-        Me.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog
-        Me.MaximizeBox = False
-        Me.MinimizeBox = False
-        Me.Name = "MultiDocForm"
-        Me.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen
-        Me.Text = "选择文件"
-        Me.TopMost = True
-        Me.ResumeLayout(False)
-        Me.PerformLayout()
+        ClientSize = New Drawing.Size(634, 481)
+        Controls.Add(lblFolder)
+        Controls.Add(txtFolder)
+        Controls.Add(btnBrowse)
+        Controls.Add(chkOpenDocuments)
+        Controls.Add(chkUseSingleDocStyle)
+        Controls.Add(lstFiles)
+        Controls.Add(lstSelectedFiles)
+        Controls.Add(btnAdd)
+        Controls.Add(btnRemove)
+        Controls.Add(btnOK)
+        Controls.Add(btnCancel)
+        FormBorderStyle = FormBorderStyle.FixedDialog
+        MaximizeBox = False
+        MinimizeBox = False
+        Name = "MultiDocForm"
+        StartPosition = FormStartPosition.CenterScreen
+        Text = "选择文件"
+        TopMost = True
+        ResumeLayout(False)
+        PerformLayout()
 
     End Sub
 
@@ -229,8 +252,9 @@ Public Class MultiDocForm
             _files.Clear()
 
             If Directory.Exists(folderPath) Then
-                ' 加载DWG文件
+                ' 加载DWG文件，按自然排序（图2 < 图10），避免数字图号乱序
                 Dim dwgFiles As String() = Directory.GetFiles(folderPath, "*.dwg")
+                Array.Sort(dwgFiles, Function(a, b) NaturalCompare(Path.GetFileName(a), Path.GetFileName(b)))
                 For Each file As String In dwgFiles
                     _files.Add(file)
                     lstFiles.Items.Add(Path.GetFileName(file))
@@ -240,6 +264,44 @@ Public Class MultiDocForm
             MessageBox.Show("加载文件列表失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
     End Sub
+
+    ' 自然排序比较：连续数字段按数值比较（图2 < 图10），其余字符按不区分大小写比较
+    Private Shared Function NaturalCompare(x As String, y As String) As Integer
+        If x Is Nothing Then x = String.Empty
+        If y Is Nothing Then y = String.Empty
+        Dim ix As Integer = 0
+        Dim iy As Integer = 0
+        While ix < x.Length AndAlso iy < y.Length
+            If Char.IsDigit(x(ix)) AndAlso Char.IsDigit(y(iy)) Then
+                Dim sx As Integer = ix
+                Dim sy As Integer = iy
+                While ix < x.Length AndAlso Char.IsDigit(x(ix))
+                    ix += 1
+                End While
+                While iy < y.Length AndAlso Char.IsDigit(y(iy))
+                    iy += 1
+                End While
+                Dim nx As String = x.Substring(sx, ix - sx).TrimStart("0"c)
+                Dim ny As String = y.Substring(sy, iy - sy).TrimStart("0"c)
+                If nx.Length <> ny.Length Then
+                    Return nx.Length.CompareTo(ny.Length)
+                End If
+                Dim numeric As Integer = String.Compare(nx, ny, StringComparison.Ordinal)
+                If numeric <> 0 Then
+                    Return numeric
+                End If
+            Else
+                Dim cx As Char = Char.ToUpperInvariant(x(ix))
+                Dim cy As Char = Char.ToUpperInvariant(y(iy))
+                If cx <> cy Then
+                    Return cx.CompareTo(cy)
+                End If
+                ix += 1
+                iy += 1
+            End If
+        End While
+        Return x.Length.CompareTo(y.Length)
+    End Function
 
     Private Sub BtnBrowse_Click(sender As Object, e As EventArgs) Handles btnBrowse.Click
         Using fbd As New FolderBrowserDialog()
@@ -251,6 +313,20 @@ Public Class MultiDocForm
                 LoadFilesFromFolder(fbd.SelectedPath)
             End If
         End Using
+    End Sub
+
+    ' 支持直接输入文件夹路径并按回车加载
+    Private Sub TxtFolder_KeyDown(sender As Object, e As KeyEventArgs) Handles txtFolder.KeyDown
+        If e.KeyCode = Keys.Enter Then
+            e.Handled = True
+            e.SuppressKeyPress = True
+            Dim folderPath As String = txtFolder.Text.Trim()
+            If Directory.Exists(folderPath) Then
+                LoadFilesFromFolder(folderPath)
+            Else
+                MessageBox.Show("文件夹不存在: " & folderPath, "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            End If
+        End If
     End Sub
 
     Private Sub BtnAdd_Click(sender As Object, e As EventArgs) Handles btnAdd.Click
