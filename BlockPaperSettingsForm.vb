@@ -16,7 +16,7 @@ Public Class BlockPaperSettingsForm
     Private WithEvents btnModify As Button
     Private WithEvents btnRemove As Button
     Private WithEvents lstSettings As ListView
-    Private btnSave As Button
+    Private WithEvents btnSave As Button
     Private btnCancel As Button
 
     ' 数据存储
@@ -24,13 +24,6 @@ Public Class BlockPaperSettingsForm
     Private _plotEngine As BatchPlotEngine
     ' 保存的列表集合：列表名称 -> 该列表下的所有设置
     Private _savedLists As Dictionary(Of String, List(Of BlockPaperSetting))
-    ' 配置文件路径
-    Private ReadOnly _configFilePath As String
-
-    ' 静态配置文件路径（用于静态方法访问）
-    Private Shared ReadOnly _staticConfigFilePath As String = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "BatchPlotVB", "BlockPaperLists.config")
 
     Public Class BlockPaperSetting
         Public Property BlockName As String
@@ -38,74 +31,10 @@ Public Class BlockPaperSettingsForm
         Public Property PaperSize As String
     End Class
 
-    ''' <summary>
-    ''' 根据图块名和打印设备查找对应的纸张尺寸
-    ''' </summary>
-    ''' <param name="blockName">图块名</param>
-    ''' <param name="plotDevice">打印设备名</param>
-    ''' <returns>纸张尺寸，如果未找到则返回空字符串</returns>
-    Public Shared Function GetPaperSizeForBlock(blockName As String, plotDevice As String) As String
-        Try
-            If String.IsNullOrEmpty(blockName) OrElse String.IsNullOrEmpty(plotDevice) Then
-                Return String.Empty
-            End If
-
-            ' 从配置文件加载所有列表
-            Dim savedLists As New Dictionary(Of String, List(Of BlockPaperSetting))()
-
-            If File.Exists(_staticConfigFilePath) Then
-                Dim lines() As String = File.ReadAllLines(_staticConfigFilePath)
-                Dim currentListName = ""
-                Dim currentList As List(Of BlockPaperSetting) = Nothing
-
-                For Each line As String In lines
-                    Dim trimmedLine As String = line.Trim()
-                    If String.IsNullOrEmpty(trimmedLine) Then Continue For
-
-                    If trimmedLine.StartsWith("[") AndAlso trimmedLine.EndsWith("]") Then
-                        ' 新列表名称
-                        currentListName = trimmedLine.Substring(1, trimmedLine.Length - 2)
-                        currentList = New List(Of BlockPaperSetting)()
-                        savedLists(currentListName) = currentList
-                    ElseIf currentList IsNot Nothing Then
-                        ' 列表项：BlockName|PlotDevice|PaperSize
-                        Dim parts() As String = trimmedLine.Split("|"c)
-                        If parts.Length >= 3 Then
-                            currentList.Add(New BlockPaperSetting() With {
-                                .BlockName = parts(0),
-                                .PlotDevice = parts(1),
-                                .PaperSize = parts(2)
-                            })
-                        End If
-                    End If
-                Next
-            End If
-
-            ' 查找与图块名同名的列表
-            If savedLists.ContainsKey(blockName) Then
-                Dim list = savedLists(blockName)
-                ' 在列表中查找与当前打印设备匹配的设置
-                For Each setting In list
-                    If setting.PlotDevice = plotDevice Then
-                        Return setting.PaperSize
-                    End If
-                Next
-            End If
-
-            Return String.Empty
-        Catch ex As Exception
-            Debug.WriteLine("查找图块纸张设置失败: " & ex.Message)
-            Return String.Empty
-        End Try
-    End Function
-
     Public Sub New(plotEngine As BatchPlotEngine)
         InitializeComponent()
         _plotEngine = plotEngine
         _settings = New List(Of BlockPaperSetting)()
-        _configFilePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "BatchPlotVB", "BlockPaperLists.config")
         LoadSavedLists()
         LoadDevices()
     End Sub
@@ -270,37 +199,12 @@ Public Class BlockPaperSettingsForm
     ' 加载已保存的列表
     Private Sub LoadSavedLists()
         Try
-            _savedLists = New Dictionary(Of String, List(Of BlockPaperSetting))()
+            ' 从共享存储加载，再填充下拉框
+            _savedLists = BlockPaperStore.LoadAllLists()
             cmbBlockList.Items.Clear()
-
-            If File.Exists(_configFilePath) Then
-                Dim lines() As String = File.ReadAllLines(_configFilePath)
-                Dim currentListName = ""
-                Dim currentList As List(Of BlockPaperSetting) = Nothing
-
-                For Each line As String In lines
-                    Dim trimmedLine As String = line.Trim()
-                    If String.IsNullOrEmpty(trimmedLine) Then Continue For
-
-                    If trimmedLine.StartsWith("[") AndAlso trimmedLine.EndsWith("]") Then
-                        ' 新列表名称
-                        currentListName = trimmedLine.Substring(1, trimmedLine.Length - 2)
-                        currentList = New List(Of BlockPaperSetting)()
-                        _savedLists(currentListName) = currentList
-                        cmbBlockList.Items.Add(currentListName)
-                    ElseIf currentList IsNot Nothing Then
-                        ' 列表项：BlockName|PlotDevice|PaperSize
-                        Dim parts() As String = trimmedLine.Split("|"c)
-                        If parts.Length >= 3 Then
-                            currentList.Add(New BlockPaperSetting() With {
-                                .BlockName = parts(0),
-                                .PlotDevice = parts(1),
-                                .PaperSize = parts(2)
-                            })
-                        End If
-                    End If
-                Next
-            End If
+            For Each listName As String In _savedLists.Keys
+                cmbBlockList.Items.Add(listName)
+            Next
         Catch ex As Exception
             Debug.WriteLine("加载已保存列表失败: " & ex.Message)
             _savedLists = New Dictionary(Of String, List(Of BlockPaperSetting))()
@@ -310,21 +214,7 @@ Public Class BlockPaperSettingsForm
     ' 保存所有列表到配置文件
     Private Sub SaveAllLists()
         Try
-            Dim dir As String = Path.GetDirectoryName(_configFilePath)
-            If Not Directory.Exists(dir) Then
-                Directory.CreateDirectory(dir)
-            End If
-
-            Using writer As New StreamWriter(_configFilePath, False)
-                For Each kvp In _savedLists
-                    If kvp.Value.Count = 0 Then Continue For
-                    writer.WriteLine("[" & kvp.Key & "]")
-                    For Each setting In kvp.Value
-                        writer.WriteLine(setting.BlockName & "|" & setting.PlotDevice & "|" & setting.PaperSize)
-                    Next
-                    writer.WriteLine()
-                Next
-            End Using
+            BlockPaperStore.SaveAllLists(_savedLists)
         Catch ex As Exception
             Debug.WriteLine("保存列表失败: " & ex.Message)
         End Try
@@ -407,6 +297,28 @@ Public Class BlockPaperSettingsForm
             listItem.SubItems.Add(setting.PaperSize)
             lstSettings.Items.Add(listItem)
         Next
+    End Sub
+
+    ' 底部"保存"(OK)按钮：把当前列表合并回全部列表并持久化到配置文件
+    Private Sub BtnSave_Click(sender As Object, e As EventArgs) Handles btnSave.Click
+        Try
+            Dim listName As String = cmbBlockList.Text.Trim()
+            If Not String.IsNullOrEmpty(listName) Then
+                If _settings.Count > 0 Then
+                    _savedLists(listName) = New List(Of BlockPaperSetting)(_settings)
+                    If Not cmbBlockList.Items.Contains(listName) Then
+                        cmbBlockList.Items.Add(listName)
+                    End If
+                ElseIf _savedLists.ContainsKey(listName) Then
+                    ' 当前列表已清空则同步删除
+                    _savedLists.Remove(listName)
+                    cmbBlockList.Items.Remove(listName)
+                End If
+            End If
+            SaveAllLists()
+        Catch ex As Exception
+            Debug.WriteLine("保存块-纸张设置失败: " & ex.Message)
+        End Try
     End Sub
 
     ' 保存列表按钮点击事件
@@ -583,19 +495,91 @@ Public Class BlockPaperSettingsForm
             ' 选择改变处理失败
         End Try
     End Sub
+End Class
 
-    ' 获取设置列表
-    Public Function GetSettings() As List(Of BlockPaperSetting)
-        Return _settings
+' 块-纸张映射持久化存储：设置窗体与打印引擎共用的唯一读写入口
+' 配置格式：节 [列表名]（列表名=图块名），行 BlockName|PlotDevice|PaperSize
+Public Module BlockPaperStore
+
+    ' 配置文件路径：%AppData%\BatchPlotVB\BlockPaperLists.config
+    Public ReadOnly ConfigFilePath As String = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "BatchPlotVB", "BlockPaperLists.config")
+
+    ' 从配置文件加载所有映射列表
+    Public Function LoadAllLists() As Dictionary(Of String, List(Of BlockPaperSettingsForm.BlockPaperSetting))
+        Dim lists As New Dictionary(Of String, List(Of BlockPaperSettingsForm.BlockPaperSetting))()
+        Try
+            If File.Exists(ConfigFilePath) Then
+                Dim lines() As String = File.ReadAllLines(ConfigFilePath)
+                Dim currentList As List(Of BlockPaperSettingsForm.BlockPaperSetting) = Nothing
+
+                For Each line As String In lines
+                    Dim trimmedLine As String = line.Trim()
+                    If String.IsNullOrEmpty(trimmedLine) Then Continue For
+
+                    If trimmedLine.StartsWith("[") AndAlso trimmedLine.EndsWith("]") Then
+                        ' 新列表名称（列表名=图块名）
+                        currentList = New List(Of BlockPaperSettingsForm.BlockPaperSetting)()
+                        lists(trimmedLine.Substring(1, trimmedLine.Length - 2)) = currentList
+                    ElseIf currentList IsNot Nothing Then
+                        ' 列表项：BlockName|PlotDevice|PaperSize
+                        Dim parts() As String = trimmedLine.Split("|"c)
+                        If parts.Length >= 3 Then
+                            currentList.Add(New BlockPaperSettingsForm.BlockPaperSetting() With {
+                                .BlockName = parts(0),
+                                .PlotDevice = parts(1),
+                                .PaperSize = parts(2)
+                            })
+                        End If
+                    End If
+                Next
+            End If
+        Catch ex As Exception
+            Debug.WriteLine("加载块-纸张映射失败: " & ex.Message)
+        End Try
+        Return lists
     End Function
 
-    ' 设置设置列表（用于加载已保存的设置）
-    Public Sub SetSettings(settings As List(Of BlockPaperSetting))
+    ' 保存所有映射列表到配置文件
+    Public Sub SaveAllLists(lists As Dictionary(Of String, List(Of BlockPaperSettingsForm.BlockPaperSetting)))
         Try
-            _settings = settings
-            RefreshListView()
-        Catch
-            ' 设置列表失败
+            Dim dir As String = Path.GetDirectoryName(ConfigFilePath)
+            If Not Directory.Exists(dir) Then
+                Directory.CreateDirectory(dir)
+            End If
+
+            Using writer As New StreamWriter(ConfigFilePath, False)
+                For Each kvp In lists
+                    If kvp.Value.Count = 0 Then Continue For
+                    writer.WriteLine("[" & kvp.Key & "]")
+                    For Each setting In kvp.Value
+                        writer.WriteLine(setting.BlockName & "|" & setting.PlotDevice & "|" & setting.PaperSize)
+                    Next
+                    writer.WriteLine()
+                Next
+            End Using
+        Catch ex As Exception
+            Debug.WriteLine("保存块-纸张映射失败: " & ex.Message)
         End Try
     End Sub
-End Class
+
+    ' 在已加载的映射中查询：块名=列表名，列表内按打印设备匹配
+    ' 命中返回映射项（含设备与纸张），未命中返回 Nothing
+    Public Function ResolveForBlock(lists As Dictionary(Of String, List(Of BlockPaperSettingsForm.BlockPaperSetting)),
+                                    blockName As String, plotDevice As String) As BlockPaperSettingsForm.BlockPaperSetting
+        If lists Is Nothing OrElse lists.Count = 0 Then Return Nothing
+        If String.IsNullOrEmpty(blockName) OrElse String.IsNullOrEmpty(plotDevice) Then Return Nothing
+
+        Dim list As List(Of BlockPaperSettingsForm.BlockPaperSetting) = Nothing
+        If lists.TryGetValue(blockName, list) AndAlso list IsNot Nothing Then
+            For Each setting In list
+                If setting.PlotDevice = plotDevice Then
+                    Return setting
+                End If
+            Next
+        End If
+        Return Nothing
+    End Function
+
+End Module

@@ -18,11 +18,9 @@ Public Class PreviewAllForm
     Private lblStatus As Label
     Private btnSelectAll As Button
     Private btnDeselectAll As Button
+    Private btnInvertSelect As Button
     Private btnPreviewSelected As Button
     Private btnClose As Button
-
-    ' 回调：用户双击某个缩略图或点击预览选中时，由外部处理
-    Public PreviewCallback As Action(Of List(Of Integer))
 
     ' 用户点击预览后，需要预览的图框索引列表（关闭窗口后由外部读取）
     Public Property PendingPreviewIndices As List(Of Integer)
@@ -78,6 +76,13 @@ Public Class PreviewAllForm
         btnDeselectAll.Location = New Point(400, 9)
         AddHandler btnDeselectAll.Click, AddressOf OnDeselectAll
         panelBottom.Controls.Add(btnDeselectAll)
+
+        btnInvertSelect = New Button()
+        btnInvertSelect.Text = "反选"
+        btnInvertSelect.Size = New Size(70, 32)
+        btnInvertSelect.Location = New Point(495, 9)
+        AddHandler btnInvertSelect.Click, AddressOf OnInvertSelect
+        panelBottom.Controls.Add(btnInvertSelect)
 
         btnPreviewSelected = New Button()
         btnPreviewSelected.Text = "预览选中"
@@ -213,6 +218,15 @@ Public Class PreviewAllForm
             AddHandler card.DoubleClick, Sub(s, ev) DoubleClickPreview(currentIndex)
             AddHandler pb.DoubleClick, Sub(s, ev) DoubleClickPreview(currentIndex)
 
+            ' 选中态持久描边（随重绘自动恢复，不丢失）
+            AddHandler card.Paint, Sub(s, ev)
+                                       If _selectedIndices.Contains(currentIndex) Then
+                                           Using pen As New Pen(Color.FromArgb(0, 120, 215), 2)
+                                               ev.Graphics.DrawRectangle(pen, 1, 1, card.Width - 3, card.Height - 3)
+                                           End Using
+                                       End If
+                                   End Sub
+
             _cards.Add(card)
             flowPanel.Controls.Add(card)
         Next
@@ -234,26 +248,23 @@ Public Class PreviewAllForm
         Catch
         End Try
 
-        ' 更新卡片边框颜色
+        ' 更新卡片选中外观（Paint 事件持久绘制选中边框）
+        ApplyCardVisual(index)
+
+        UpdateStatus()
+    End Sub
+
+    ' 按选中状态刷新单张卡片外观：高亮底色 + Paint 事件绘制选中边框
+    Private Sub ApplyCardVisual(index As Integer)
         Dim card = _cards(index)
         If _selectedIndices.Contains(index) Then
             card.BackColor = Color.FromArgb(220, 235, 252)
             card.BorderStyle = BorderStyle.None
-            Dim g As Graphics = card.CreateGraphics()
-            Try
-                Using pen As New Pen(Color.FromArgb(0, 120, 215), 2)
-                    g.DrawRectangle(pen, 1, 1, card.Width - 3, card.Height - 3)
-                End Using
-            Finally
-                g.Dispose()
-            End Try
         Else
             card.BackColor = Color.White
             card.BorderStyle = BorderStyle.FixedSingle
-            card.Invalidate()
         End If
-
-        UpdateStatus()
+        card.Invalidate()
     End Sub
 
     Private Sub DoubleClickPreview(index As Integer)
@@ -266,17 +277,27 @@ Public Class PreviewAllForm
         _selectedIndices.Clear()
         For i = 0 To _cards.Count - 1
             _selectedIndices.Add(i)
-            _cards(i).BackColor = Color.FromArgb(220, 235, 252)
-            _cards(i).BorderStyle = BorderStyle.None
+            ApplyCardVisual(i)
         Next
         UpdateStatus()
     End Sub
 
     Private Sub OnDeselectAll(s As Object, e As EventArgs)
         _selectedIndices.Clear()
-        For Each card In _cards
-            card.BackColor = Color.White
-            card.BorderStyle = BorderStyle.FixedSingle
+        For i = 0 To _cards.Count - 1
+            ApplyCardVisual(i)
+        Next
+        UpdateStatus()
+    End Sub
+
+    Private Sub OnInvertSelect(s As Object, e As EventArgs)
+        For i = 0 To _cards.Count - 1
+            If _selectedIndices.Contains(i) Then
+                _selectedIndices.Remove(i)
+            Else
+                _selectedIndices.Add(i)
+            End If
+            ApplyCardVisual(i)
         Next
         UpdateStatus()
     End Sub

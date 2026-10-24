@@ -61,16 +61,4 @@ Public Class SelectionForm
         Next
         _selectedItems = String.Join(",", selected)
     End Sub
-
-    Private Sub InitializeComponent()
-        SuspendLayout()
-        '
-        'SelectionForm
-        '
-        ClientSize = New Size(284, 261)
-        Name = "SelectionForm"
-        TopMost = True
-        ResumeLayout(False)
-
-    End Sub
 End Class

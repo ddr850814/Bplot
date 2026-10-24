@@ -22,6 +22,8 @@ Public Class MultiDocForm
     ' 按钮
     Private WithEvents btnAdd As Button
     Private WithEvents btnRemove As Button
+    Private WithEvents btnMoveUp As Button
+    Private WithEvents btnMoveDown As Button
     Private WithEvents btnOK As Button
     Private WithEvents btnCancel As Button
 
@@ -89,6 +91,8 @@ Public Class MultiDocForm
         lstSelectedFiles = New ListBox()
         btnAdd = New Button()
         btnRemove = New Button()
+        btnMoveUp = New Button()
+        btnMoveDown = New Button()
         btnOK = New Button()
         btnCancel = New Button()
         SuspendLayout()
@@ -107,7 +111,6 @@ Public Class MultiDocForm
         txtFolder.Name = "txtFolder"
         txtFolder.Size = New Drawing.Size(480, 21)
         txtFolder.TabIndex = 1
-        txtFolder.Text = "C:\Users\jiazheng\桌面"
         '
         'btnBrowse
         '
@@ -153,11 +156,27 @@ Public Class MultiDocForm
         '
         'btnAdd
         '
-        btnAdd.Location = New Drawing.Point(90, 405)
+        btnAdd.Location = New Drawing.Point(20, 405)
         btnAdd.Name = "btnAdd"
         btnAdd.Size = New Drawing.Size(120, 30)
         btnAdd.TabIndex = 7
         btnAdd.Text = "添加文件"
+        '
+        'btnMoveUp
+        '
+        btnMoveUp.Location = New Drawing.Point(160, 405)
+        btnMoveUp.Name = "btnMoveUp"
+        btnMoveUp.Size = New Drawing.Size(120, 30)
+        btnMoveUp.TabIndex = 11
+        btnMoveUp.Text = "上移"
+        '
+        'btnMoveDown
+        '
+        btnMoveDown.Location = New Drawing.Point(290, 405)
+        btnMoveDown.Name = "btnMoveDown"
+        btnMoveDown.Size = New Drawing.Size(120, 30)
+        btnMoveDown.TabIndex = 12
+        btnMoveDown.Text = "下移"
         '
         'btnRemove
         '
@@ -197,6 +216,8 @@ Public Class MultiDocForm
         Controls.Add(lstSelectedFiles)
         Controls.Add(btnAdd)
         Controls.Add(btnRemove)
+        Controls.Add(btnMoveUp)
+        Controls.Add(btnMoveDown)
         Controls.Add(btnOK)
         Controls.Add(btnCancel)
         FormBorderStyle = FormBorderStyle.FixedDialog
@@ -351,11 +372,82 @@ Public Class MultiDocForm
         Next
     End Sub
 
+    ' 上移右侧已选列表中的选中文件
+    Private Sub BtnMoveUp_Click(sender As Object, e As EventArgs) Handles btnMoveUp.Click
+        MoveSelectedFiles(-1)
+    End Sub
+
+    ' 下移右侧已选列表中的选中文件
+    Private Sub BtnMoveDown_Click(sender As Object, e As EventArgs) Handles btnMoveDown.Click
+        MoveSelectedFiles(1)
+    End Sub
+
+    ' 上移/下移右侧已选列表中的选中文件（delta=-1 上移，1 下移），打印顺序即列表顺序
+    Private Sub MoveSelectedFiles(delta As Integer)
+        Dim indices As New List(Of Integer)()
+        For Each idx As Integer In lstSelectedFiles.SelectedIndices
+            indices.Add(idx)
+        Next
+        If indices.Count = 0 Then Return
+
+        If delta < 0 Then
+            indices.Sort()
+            For Each idx As Integer In indices
+                If idx > 0 Then SwapSelectedFiles(idx, idx - 1)
+            Next
+        Else
+            indices.Sort()
+            indices.Reverse()
+            For Each idx As Integer In indices
+                If idx < lstSelectedFiles.Items.Count - 1 Then SwapSelectedFiles(idx, idx + 1)
+            Next
+        End If
+    End Sub
+
+    ' 交换右侧列表两个位置的数据与显示，并保持选中状态跟随移动
+    Private Sub SwapSelectedFiles(a As Integer, b As Integer)
+        Dim tmpPath As String = _selectedFiles(a)
+        _selectedFiles(a) = _selectedFiles(b)
+        _selectedFiles(b) = tmpPath
+        Dim tmpName As Object = lstSelectedFiles.Items(a)
+        lstSelectedFiles.Items(a) = lstSelectedFiles.Items(b)
+        lstSelectedFiles.Items(b) = tmpName
+        Dim aSelected As Boolean = lstSelectedFiles.GetSelected(a)
+        Dim bSelected As Boolean = lstSelectedFiles.GetSelected(b)
+        lstSelectedFiles.SetSelected(a, bSelected)
+        lstSelectedFiles.SetSelected(b, aSelected)
+    End Sub
+
     Private Sub ChkOpenDocuments_CheckedChanged(sender As Object, e As EventArgs) Handles chkOpenDocuments.CheckedChanged
         If chkOpenDocuments.Checked Then
             ' 将打开的文档自动添加到右侧已选列表（如果还没有选择）
             AddOpenDocumentsToSelected()
+        Else
+            ' 取消勾选：反向移除右侧列表中所有当前打开的文档
+            RemoveOpenDocumentsFromSelected()
         End If
+    End Sub
+
+    ' 从右侧已选列表移除所有当前打开的文档（与勾选时的自动追加相对应）
+    Private Sub RemoveOpenDocumentsFromSelected()
+        Try
+            For i As Integer = _selectedFiles.Count - 1 To 0 Step -1
+                Dim isOpen As Boolean = False
+                For Each doc As Autodesk.AutoCAD.ApplicationServices.Document In
+                    Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager
+                    If String.Equals(doc.Name, _selectedFiles(i), StringComparison.OrdinalIgnoreCase) Then
+                        isOpen = True
+                        Exit For
+                    End If
+                Next
+                If isOpen Then
+                    _selectedFiles.RemoveAt(i)
+                    lstSelectedFiles.Items.RemoveAt(i)
+                End If
+            Next
+        Catch ex As Exception
+            Debug.WriteLine("移除打开的文档失败: " & ex.Message)
+        End Try
     End Sub
 
     ' 将打开的文档添加到右侧已选列表

@@ -196,10 +196,16 @@ Public Class AutoCADPathResolver
         Next
 
         Dim programFiles As String = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles)
+        Dim programFilesX86 As String = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)
         Dim years As String() = {"2024", "2023", "2022", "2021", "2020"}
 
         For Each year As String In years
             Dim exePath As String = Path.Combine(programFiles, "Autodesk", $"AutoCAD {year}", "Styexe.exe")
+            If File.Exists(exePath) Then
+                Return exePath
+            End If
+            ' 32 位安装目录回退（部分版本装在 Program Files (x86)）
+            exePath = Path.Combine(programFilesX86, "Autodesk", $"AutoCAD {year}", "Styexe.exe")
             If File.Exists(exePath) Then
                 Return exePath
             End If

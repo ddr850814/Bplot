@@ -17,6 +17,12 @@ Public Class BatchPlotEngine
     ' 纸张名称映射字典 - 本地化名称 -> 规范名称
     Private _paperNameMap As New Dictionary(Of String, String)()
 
+    ' 块-纸张映射快照：批量打印开始时加载一次，打印中按图框块名查询
+    Private _blockPaperMap As Dictionary(Of String, List(Of BlockPaperSettingsForm.BlockPaperSetting))
+
+    ' 用户取消标志：UI 置 True 后，打印循环在当前任务完成后停止；UI 在每次启动新任务前重置
+    Public Property CancellationPending As Boolean
+
     Public Sub New()
         _logger = Logger.GetInstance()
         _configManager = New ConfigManager()
@@ -82,16 +88,6 @@ Public Class BatchPlotEngine
     End Function
 
     ''' <summary>
-    ''' 获取当前文档，如果无效则返回 Nothing
-    ''' </summary>
-    Public Function GetCurrentDocument() As Document
-        If Not ValidateCurrentDocument() Then
-            Return Nothing
-        End If
-        Return _originalDoc
-    End Function
-
-    ''' <summary>
     ''' 安全地更新文档引用，避免访问已关闭文档的属性
     ''' </summary>
     Public Sub SafeUpdateDocument()
@@ -122,7 +118,6 @@ Public Class BatchPlotEngine
         Public Property PlotStyle As String
         Public Property OutputPath As String
         Public Property IsLandscape As Boolean
-        Public Property PlotArea As PlotAreaType
         Public Property Copies As Integer = 1
         Public Property PlotScale As PlotScaleType = PlotScaleType.FitToPaper
         Public Property FixedScale As Double = 100
@@ -135,19 +130,10 @@ Public Class BatchPlotEngine
         Public Property UseDWGName As Boolean = False
         Public Property DuplicateHandling As DuplicateFileHandling = DuplicateFileHandling.AutoRename
         Public Property PlotStamp As Boolean = False
-        Public Property PlotStampFile As String = ""
-        Public Property AutoMatchBlock As Boolean = False
         Public Property Collate As Boolean = True
-        Public Property BlockNamePattern As String = ""
         Public Property TraverseLayouts As Boolean = False
         Public Property DirectPrint As Boolean = False  ' True=直接打印到物理打印机, False=打印到文件
     End Class
-
-    Public Enum PlotAreaType
-        Window
-        Layout
-        Extents
-    End Enum
 
     Public Enum PlotScaleType
         AutoScale
@@ -208,8 +194,10 @@ Public Class BatchPlotEngine
 
 #Region "Frame Detection (Delegated to FrameDetector)"
 
-    Public Function DetectFrames(blockName As String, layerName As String) As List(Of FrameInfo)
-        Return DetectFrames(blockName, layerName, Nothing)
+    ' 自动识别图框图块：返回图中单实例外包面积最大的块名（"图块自匹配"用）
+    Public Function AutoDetectFrameBlockName() As String
+        If _frameDetector Is Nothing Then Return ""
+        Return _frameDetector.AutoDetectFrameBlockName()
     End Function
 
     Public Function DetectFrames(blockName As String, layerName As String, settings As PlotSettings) As List(Of FrameInfo)
@@ -217,17 +205,9 @@ Public Class BatchPlotEngine
         Return _frameDetector.DetectFramesByBlock(blockName, layerName, settings)
     End Function
 
-    Public Function DetectFramesByPolyline(layerName As String) As List(Of FrameInfo)
-        Return DetectFramesByPolyline(layerName, Nothing)
-    End Function
-
     Public Function DetectFramesByPolyline(layerName As String, settings As PlotSettings) As List(Of FrameInfo)
         If _frameDetector Is Nothing Then Return New List(Of FrameInfo)()
         Return _frameDetector.DetectFramesByPolyline(layerName, settings)
-    End Function
-
-    Public Function DetectFramesByLine(layerName As String) As List(Of FrameInfo)
-        Return DetectFramesByLine(layerName, Nothing)
     End Function
 
     Public Function DetectFramesByLine(layerName As String, settings As PlotSettings) As List(Of FrameInfo)
@@ -604,6 +584,12 @@ Public Class BatchPlotEngine
             Dim totalTasks As Integer = totalFrames * settings.Copies
             Dim currentTask = 0
 
+            ' 加载块-纸张映射（一次），打印中按图框块名+当前设备查询
+            _blockPaperMap = BlockPaperStore.LoadAllLists()
+            If _blockPaperMap.Count > 0 Then
+                _logger.Info($"已加载块-纸张映射 {_blockPaperMap.Count} 个列表")
+            End If
+
             ' 准备输出路径和文件名（仅用于打印到文件模式）
             Dim outputPath As String = Nothing
             Dim outputFileName As String = Nothing
@@ -653,23 +639,36 @@ Public Class BatchPlotEngine
 
             If settings.Collate Then
                 ' 逐份打印：外层循环份数，内层循环图框
+                Dim cancelled As Boolean = False
                 For copy = 1 To settings.Copies
+                    If cancelled Then Exit For
                     For i = 0 To totalFrames - 1
+                        ' 用户取消：当前任务完成后停止整批打印
+                        If CancellationPending Then
+                            cancelled = True
+                            _logger.Info("用户取消，停止批量打印")
+                            Exit For
+                        End If
                         currentTask += 1
                         Dim frame As FrameInfo = selectedFrames(i)
                         progressCallback?.Invoke(CInt(currentTask / totalTasks * 100),
                             $"逐份打印 第{copy}/{settings.Copies}份 - 图框 {i + 1}/{totalFrames}...")
 
+                        ' 块-纸张映射命中时按映射的设备/纸张打印该图框
+                        Dim mapping As BlockPaperSettingsForm.BlockPaperSetting = ResolveBlockPaperForFrame(frame, settings)
+                        Dim effectivePlotter As String = If(mapping IsNot Nothing, mapping.PlotDevice, settings.PlotterName)
+                        Dim effectivePaper As String = If(mapping IsNot Nothing, mapping.PaperSize, settings.PaperSize)
+
                         ' 构建输出文件路径（如果是打印到文件模式）
                         Dim outputFilePath As String = Nothing
                         If Not settings.DirectPrint Then
                             ' 应用名称样板生成文件名
-                            Dim fileName As String = FormatFileName(outputFileName, frame.FrameNumber, currentTask, frame, settings.PaperSize)
+                            Dim fileName As String = FormatFileName(outputFileName, frame.FrameNumber, currentTask, frame, effectivePaper)
                             ' 添加份数标识（如果份数大于1）
                             If settings.Copies > 1 Then
                                 fileName = $"{fileName}_Copy{copy}"
                             End If
-                            Dim tempFilePath As String = BuildOutputPath(outputPath, fileName, settings.PlotterName)
+                            Dim tempFilePath As String = BuildOutputPath(outputPath, fileName, effectivePlotter)
                             ' 处理重名文件（跳过模式命中返回空串，必须跳过，不得以直接打印模式执行）
                             outputFilePath = HandleDuplicateFile(tempFilePath, settings.DuplicateHandling)
                             If String.IsNullOrEmpty(outputFilePath) Then
@@ -678,32 +677,49 @@ Public Class BatchPlotEngine
                             End If
                         End If
 
-                        ' 为单个图框执行独立打印任务
-                        PrintSingleFrame(frame, settings, i + 1, totalFrames, copy, settings.Copies, outputFilePath)
+                        ' 为单个图框执行独立打印任务（mapping 非空时内部覆盖设备/纸张）
+                        PrintSingleFrame(frame, settings, i + 1, totalFrames, copy, settings.Copies, outputFilePath, mapping)
 
                         _logger.Info($"图框 {frame.FrameNumber} 第{copy}份: 独立打印任务完成")
                     Next
                 Next
+                If cancelled Then
+                    progressCallback?.Invoke(100, "打印已取消")
+                    Return ' Finally 会恢复 BACKGROUNDPLOT
+                End If
             Else
                 ' 非逐份打印：外层循环图框，内层循环份数
+                Dim cancelled As Boolean = False
                 For i = 0 To totalFrames - 1
+                    If cancelled Then Exit For
                     Dim frame As FrameInfo = selectedFrames(i)
 
                     For copy = 1 To settings.Copies
+                        ' 用户取消：当前任务完成后停止整批打印
+                        If CancellationPending Then
+                            cancelled = True
+                            _logger.Info("用户取消，停止批量打印")
+                            Exit For
+                        End If
                         currentTask += 1
                         progressCallback?.Invoke(CInt(currentTask / totalTasks * 100),
                             $"图框 {i + 1}/{totalFrames} - 第{copy}/{settings.Copies}份...")
 
+                        ' 块-纸张映射命中时按映射的设备/纸张打印该图框
+                        Dim mapping As BlockPaperSettingsForm.BlockPaperSetting = ResolveBlockPaperForFrame(frame, settings)
+                        Dim effectivePlotter As String = If(mapping IsNot Nothing, mapping.PlotDevice, settings.PlotterName)
+                        Dim effectivePaper As String = If(mapping IsNot Nothing, mapping.PaperSize, settings.PaperSize)
+
                         ' 构建输出文件路径（如果是打印到文件模式）
                         Dim outputFilePath As String = Nothing
                         If Not settings.DirectPrint Then
                             ' 应用名称样板生成文件名
-                            Dim fileName As String = FormatFileName(outputFileName, frame.FrameNumber, currentTask, frame, settings.PaperSize)
+                            Dim fileName As String = FormatFileName(outputFileName, frame.FrameNumber, currentTask, frame, effectivePaper)
                             ' 添加份数标识（如果份数大于1）
                             If settings.Copies > 1 Then
                                 fileName = $"{fileName}_Copy{copy}"
                             End If
-                            Dim tempFilePath As String = BuildOutputPath(outputPath, fileName, settings.PlotterName)
+                            Dim tempFilePath As String = BuildOutputPath(outputPath, fileName, effectivePlotter)
                             ' 处理重名文件（跳过模式命中返回空串，必须跳过，不得以直接打印模式执行）
                             outputFilePath = HandleDuplicateFile(tempFilePath, settings.DuplicateHandling)
                             If String.IsNullOrEmpty(outputFilePath) Then
@@ -712,12 +728,16 @@ Public Class BatchPlotEngine
                             End If
                         End If
 
-                        ' 为单个图框执行独立打印任务
-                        PrintSingleFrame(frame, settings, i + 1, totalFrames, copy, settings.Copies, outputFilePath)
+                        ' 为单个图框执行独立打印任务（mapping 非空时内部覆盖设备/纸张）
+                        PrintSingleFrame(frame, settings, i + 1, totalFrames, copy, settings.Copies, outputFilePath, mapping)
 
                         _logger.Info($"图框 {frame.FrameNumber} 第{copy}份: 独立打印任务完成")
                     Next
                 Next
+                If cancelled Then
+                    progressCallback?.Invoke(100, "打印已取消")
+                    Return ' Finally 会恢复 BACKGROUNDPLOT
+                End If
             End If
 
             progressCallback?.Invoke(100, $"打印完成，共打印 {totalFrames} 个图框，{settings.Copies} 份")
@@ -742,11 +762,19 @@ Public Class BatchPlotEngine
     ' 支持直接打印到物理打印机或打印到文件，无对话框
     Private Sub PrintSingleFrame(frame As FrameInfo, settings As PlotSettings, frameIndex As Integer, totalFrames As Integer,
                                   Optional currentCopy As Integer = 1, Optional totalCopies As Integer = 1,
-                                  Optional outputFilePath As String = Nothing)
+                                  Optional outputFilePath As String = Nothing,
+                                  Optional mapping As BlockPaperSettingsForm.BlockPaperSetting = Nothing)
 
         Try
             Dim printMode As String = If(String.IsNullOrEmpty(outputFilePath), "直接打印", $"打印到文件: {outputFilePath}")
             _logger.Info($"PrintSingleFrame开始: 图框{frame.FrameNumber} 第{currentCopy}/{totalCopies}份, {printMode}")
+
+            ' 块-纸张映射命中时按帧覆盖设备与纸张，其余设置保持全局值
+            Dim frameSettings As PlotSettings = settings
+            If mapping IsNot Nothing Then
+                frameSettings = CloneSettingsWithDevice(settings, mapping.PlotDevice, mapping.PaperSize)
+                _logger.Info($"图框 {frame.FrameNumber} 命中块-纸张映射: {mapping.PlotDevice} / {mapping.PaperSize}")
+            End If
 
             ' 检查是否有打印正在进行
             If PlotFactory.ProcessPlotState <> ProcessPlotState.NotPlotting Then
@@ -780,7 +808,7 @@ Public Class BatchPlotEngine
                     ' 创建PlotSettings并配置
                     Dim ps As New Autodesk.AutoCAD.DatabaseServices.PlotSettings(layout.ModelType)
                     ps.CopyFrom(layout)
-                    ConfigurePlotSettings(ps, frame, settings)
+                    ConfigurePlotSettings(ps, frame, frameSettings)
 
                     ' 创建PlotInfo
                     Dim pi As New PlotInfo()
@@ -917,6 +945,44 @@ Public Class BatchPlotEngine
         Return Path.Combine(outputPath, fileName & extension)
     End Function
 
+    ' 解析图框的块-纸张映射：图框为块参照且映射命中时返回映射项（含设备与纸张）
+    Private Function ResolveBlockPaperForFrame(frame As FrameInfo, settings As PlotSettings) As BlockPaperSettingsForm.BlockPaperSetting
+        Try
+            If frame Is Nothing OrElse String.IsNullOrEmpty(frame.BlockName) Then Return Nothing
+            If String.IsNullOrEmpty(settings.PlotterName) Then Return Nothing
+            Return BlockPaperStore.ResolveForBlock(_blockPaperMap, frame.BlockName, settings.PlotterName)
+        Catch ex As Exception
+            _logger.Warning($"块-纸张映射解析失败: {ex.Message}")
+            Return Nothing
+        End Try
+    End Function
+
+    ' 按帧克隆打印设置并覆盖设备/纸张（块-纸张映射命中时使用）
+    Private Function CloneSettingsWithDevice(source As PlotSettings, plotterName As String, paperSize As String) As PlotSettings
+        Return New PlotSettings With {
+            .PlotterName = plotterName,
+            .PaperSize = paperSize,
+            .PlotStyle = source.PlotStyle,
+            .OutputPath = source.OutputPath,
+            .IsLandscape = source.IsLandscape,
+            .Copies = source.Copies,
+            .PlotScale = source.PlotScale,
+            .FixedScale = source.FixedScale,
+            .AutoRotate = source.AutoRotate,
+            .Reverse = source.Reverse,
+            .AutoCenter = source.AutoCenter,
+            .OffsetX = source.OffsetX,
+            .OffsetY = source.OffsetY,
+            .NameTemplate = source.NameTemplate,
+            .UseDWGName = source.UseDWGName,
+            .DuplicateHandling = source.DuplicateHandling,
+            .PlotStamp = source.PlotStamp,
+            .Collate = source.Collate,
+            .TraverseLayouts = source.TraverseLayouts,
+            .DirectPrint = source.DirectPrint
+        }
+    End Function
+
 #End Region
 
 #Region "Preview"
@@ -940,7 +1006,15 @@ Public Class BatchPlotEngine
                     ' 创建PlotSettings并配置
                     Dim ps As New Autodesk.AutoCAD.DatabaseServices.PlotSettings(layout.ModelType)
                     ps.CopyFrom(layout)
-                    ConfigurePlotSettings(ps, frame, settings)
+
+                    ' 预览同样遵循块-纸张映射，保证预览与实际打印一致
+                    Dim frameSettings As PlotSettings = settings
+                    Dim mapping = BlockPaperStore.ResolveForBlock(BlockPaperStore.LoadAllLists(), frame.BlockName, settings.PlotterName)
+                    If mapping IsNot Nothing Then
+                        frameSettings = CloneSettingsWithDevice(settings, mapping.PlotDevice, mapping.PaperSize)
+                    End If
+
+                    ConfigurePlotSettings(ps, frame, frameSettings)
 
                     ' 注意：不要将预览的页面设置应用到共享布局
                     ' 这会导致多个预览之间的冲突
@@ -1994,11 +2068,19 @@ Public Class BatchPlotEngine
 
             Dim count = 0
             Dim total As Integer = layouts.Count * settings.Copies
+            Dim cancelled As Boolean = False
 
             _logger.Info($"开始打印已有布局，共 {layouts.Count} 个布局，{settings.Copies} 份")
 
             For Each layoutName As String In layouts
+                If cancelled Then Exit For
                 For copy = 1 To settings.Copies
+                    ' 用户取消：当前任务完成后停止整批打印
+                    If CancellationPending Then
+                        cancelled = True
+                        _logger.Info("用户取消，停止布局打印")
+                        Exit For
+                    End If
                     count += 1
                     progressCallback?.Invoke(CInt((count / total) * 100), $"正在打印布局: {layoutName} (第{copy}/{settings.Copies}份)")
 
@@ -2008,6 +2090,11 @@ Public Class BatchPlotEngine
                     _logger.Info($"布局 {layoutName} 第{copy}份打印完成")
                 Next
             Next
+
+            If cancelled Then
+                progressCallback?.Invoke(100, "布局打印已取消")
+                Return ' Finally 会恢复 BACKGROUNDPLOT
+            End If
 
             progressCallback?.Invoke(100, "布局打印完成")
         Catch ex As Exception
@@ -2867,42 +2954,6 @@ Public Class BatchPlotEngine
 
 #End Region
 
-#Region "Plot Stamp"
-
-    Private Function FindDefaultPlotStampFile() As String
-        Try
-            Dim supportPaths As String = String.Empty
-            Try
-                supportPaths = Application.GetSystemVariable("ACAD").ToString()
-            Catch
-            End Try
-
-            Dim paths As String() = supportPaths.Split(New Char() {";"c}, StringSplitOptions.RemoveEmptyEntries)
-            For Each searchPath As String In paths
-                If Directory.Exists(searchPath) Then
-                    Dim mmFile As String = Path.Combine(searchPath, "Mm.pss")
-                    Dim inchesFile As String = Path.Combine(searchPath, "Inches.pss")
-                    If File.Exists(mmFile) Then Return mmFile
-                    If File.Exists(inchesFile) Then Return inchesFile
-                End If
-            Next
-
-            Dim supportDir As String = AutoCADPathResolver.GetSupportPath()
-            If Not String.IsNullOrEmpty(supportDir) Then
-                Dim mmFile As String = Path.Combine(supportDir, "Mm.pss")
-                Dim inchesFile As String = Path.Combine(supportDir, "Inches.pss")
-                If File.Exists(mmFile) Then Return mmFile
-                If File.Exists(inchesFile) Then Return inchesFile
-            End If
-        Catch ex As Exception
-            _logger.Warning("查找默认打印戳记文件失败: " & ex.Message)
-        End Try
-
-        Return String.Empty
-    End Function
-
-#End Region
-
 #Region "Config Management (Delegated)"
 
     Public Function LoadConfig(filePath As String) As Dictionary(Of String, String)
@@ -2912,10 +2963,6 @@ Public Class BatchPlotEngine
     Public Sub SaveConfig(config As Dictionary(Of String, String), filePath As String)
         _configManager.SavePreset(Path.GetFileNameWithoutExtension(filePath), config)
     End Sub
-
-    Public Function GetPresetNames() As List(Of String)
-        Return _configManager.GetPresetNames()
-    End Function
 
 #End Region
 
@@ -2957,256 +3004,6 @@ Public Class BatchPlotEngine
             _logger.Error("获取图层列表失败", ex)
         End Try
         Return layers
-    End Function
-
-    ' 图框去重
-    Public Function BoxUnique(frames As List(Of FrameInfo)) As List(Of FrameInfo)
-        Dim uniqueFrames As New List(Of FrameInfo)()
-        Try
-            For Each frame As FrameInfo In frames
-                Dim isDuplicate = False
-                For Each existing As FrameInfo In uniqueFrames
-                    If Math.Abs(frame.Bounds.MinPoint.X - existing.Bounds.MinPoint.X) < 0.001 AndAlso
-                       Math.Abs(frame.Bounds.MinPoint.Y - existing.Bounds.MinPoint.Y) < 0.001 AndAlso
-                       Math.Abs(frame.Bounds.MaxPoint.X - existing.Bounds.MaxPoint.X) < 0.001 AndAlso
-                       Math.Abs(frame.Bounds.MaxPoint.Y - existing.Bounds.MaxPoint.Y) < 0.001 Then
-                        isDuplicate = True
-                        Exit For
-                    End If
-                Next
-                If Not isDuplicate Then
-                    uniqueFrames.Add(frame)
-                End If
-            Next
-        Catch ex As Exception
-            _logger.Error("图框去重失败", ex)
-        End Try
-        Return uniqueFrames
-    End Function
-
-    ' 多文档打印脚本
-    Public Sub MultiDocPlotScript(fileList As List(Of String), settings As PlotSettings, progressCallback As Action(Of Integer, String))
-        Try
-            Dim plotStyle As String = If(String.IsNullOrEmpty(settings.PlotStyle) OrElse settings.PlotStyle = "无", ".", settings.PlotStyle)
-            Dim count = 0
-            Dim total As Integer = fileList.Count
-
-            For Each filePath As String In fileList
-                count += 1
-                progressCallback?.Invoke(CInt((count / total) * 100), $"正在处理: {Path.GetFileName(filePath)}")
-
-                Dim sb As New StringBuilder(1024)
-                sb.Append($"_-OPEN ""{filePath}""" & vbLf)
-                sb.Append("_-PLOT" & vbLf)
-                sb.Append("Y" & vbLf)
-                sb.Append("Model" & vbLf)
-                sb.Append(settings.PlotterName & vbLf)
-                sb.Append(settings.PaperSize & vbLf)
-                sb.Append("M" & vbLf)
-                sb.Append("L" & vbLf)
-                sb.Append("N" & vbLf)
-                sb.Append("E" & vbLf)
-                sb.Append("F" & vbLf)
-                sb.Append("C" & vbLf)
-                sb.Append("Y" & vbLf)
-                sb.Append(plotStyle & vbLf)
-                sb.Append("Y" & vbLf)
-                sb.Append("A" & vbLf)
-                sb.Append("N" & vbLf)
-                sb.Append("N" & vbLf)
-                sb.Append("Y" & vbLf)
-                sb.Append("_-CLOSE" & vbLf)
-                sb.Append("Y" & vbLf)
-                _doc.SendStringToExecute(sb.ToString(), True, False, False)
-
-                Threading.Thread.Sleep(1000)
-            Next
-
-            progressCallback?.Invoke(100, "多文档打印完成")
-        Catch ex As Exception
-            _logger.Error("多文档打印脚本执行失败", ex)
-            Throw New Exception("多文档打印脚本执行失败: " & ex.Message)
-        End Try
-    End Sub
-
-    ' 打印模型布局
-    Public Sub PlotModelLayouts(settings As PlotSettings, progressCallback As Action(Of Integer, String))
-        Try
-            Dim plotStyle As String = If(String.IsNullOrEmpty(settings.PlotStyle) OrElse settings.PlotStyle = "无", ".", settings.PlotStyle)
-
-            Dim sb As New StringBuilder(512)
-            sb.Append("_-PLOT" & vbLf)
-            sb.Append("Y" & vbLf)
-            sb.Append("Model" & vbLf)
-            sb.Append(settings.PlotterName & vbLf)
-            sb.Append(settings.PaperSize & vbLf)
-            sb.Append("M" & vbLf)
-            sb.Append("L" & vbLf)
-            sb.Append("N" & vbLf)
-            sb.Append("E" & vbLf)
-            sb.Append("F" & vbLf)
-            sb.Append("C" & vbLf)
-            sb.Append("Y" & vbLf)
-            sb.Append(plotStyle & vbLf)
-            sb.Append("Y" & vbLf)
-            sb.Append("A" & vbLf)
-            sb.Append("N" & vbLf)
-            sb.Append("N" & vbLf)
-            sb.Append("Y" & vbLf)
-            _doc.SendStringToExecute(sb.ToString(), True, False, False)
-            progressCallback?.Invoke(100, "模型布局打印完成")
-        Catch ex As Exception
-            _logger.Error("打印模型布局失败", ex)
-            Throw New Exception("打印模型布局失败: " & ex.Message)
-        End Try
-    End Sub
-
-    ' 打开打印机配置
-    Public Sub OpenPlotterConfig()
-        Try
-            _doc.SendStringToExecute("-PLOTTERMANAGER ", True, False, False)
-        Catch ex As Exception
-            _logger.Warning("打开打印机配置失败: " & ex.Message)
-        End Try
-    End Sub
-
-    ' 打开打印样式编辑
-    Public Sub OpenPlotStyleEdit()
-        Try
-            _doc.SendStringToExecute("-STYLESMANAGER ", True, False, False)
-        Catch ex As Exception
-            _logger.Warning("打开打印样式编辑失败: " & ex.Message)
-        End Try
-    End Sub
-
-    ' 获取实际输出文件夹
-    Public Function GetActualOutputFolder(basePath As String, useDwgName As Boolean) As String
-        Try
-            If useDwgName Then
-                Dim dwgName As String = Path.GetFileNameWithoutExtension(_doc.Name)
-                Return Path.Combine(basePath, dwgName)
-            Else
-                Return basePath
-            End If
-        Catch ex As Exception
-            _logger.Warning("获取实际输出文件夹失败: " & ex.Message)
-            Return basePath
-        End Try
-    End Function
-
-    ' 图层操作 - 创建或切换图层，设置图层颜色
-    Public Sub LayerOperation(layerName As String, colorIndex As Integer)
-        Try
-            Dim layerId As ObjectId = ObjectId.Null
-
-            Using tr As Transaction = _db.TransactionManager.StartTransaction()
-                Dim layerTable = CType(tr.GetObject(_db.LayerTableId, OpenMode.ForWrite), LayerTable)
-
-                If Not layerTable.Has(layerName) Then
-                    Dim newLayer As New LayerTableRecord()
-                    newLayer.Name = layerName
-                    newLayer.Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(Autodesk.AutoCAD.Colors.ColorMethod.ByAci, CShort(colorIndex))
-                    layerTable.Add(newLayer)
-                    tr.AddNewlyCreatedDBObject(newLayer, True)
-                    layerId = newLayer.ObjectId
-                Else
-                    layerId = layerTable(layerName)
-                    Dim layer = CType(tr.GetObject(layerId, OpenMode.ForWrite), LayerTableRecord)
-                    layer.Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(Autodesk.AutoCAD.Colors.ColorMethod.ByAci, CShort(colorIndex))
-                End If
-
-                tr.Commit()
-            End Using
-
-            _db.Clayer = layerId
-            _db.Cecolor = Autodesk.AutoCAD.Colors.Color.FromColorIndex(Autodesk.AutoCAD.Colors.ColorMethod.ByLayer, 256)
-            _db.Celtype = _db.ByLayerLinetype
-
-        Catch ex As Exception
-            _logger.Error("图层操作失败", ex)
-        End Try
-    End Sub
-
-    ' 清理图层
-    Public Sub PurgeLayer(layerName As String)
-        Try
-            Using tr As Transaction = _db.TransactionManager.StartTransaction()
-                Dim layerTable = CType(tr.GetObject(_db.LayerTableId, OpenMode.ForWrite), LayerTable)
-                If layerTable.Has(layerName) Then
-                    Dim layerId As ObjectId = layerTable(layerName)
-                    Dim layer = CType(tr.GetObject(layerId, OpenMode.ForWrite), LayerTableRecord)
-                    layer.Erase()
-                End If
-                tr.Commit()
-            End Using
-        Catch ex As Exception
-            _logger.Error("清理图层失败", ex)
-        End Try
-    End Sub
-
-    ' 扩展边界框
-    Public Function ExpandBounding(bounds As Extents3d, distance As Double) As Extents3d
-        Try
-            Dim minPt As New Point3d(bounds.MinPoint.X - distance, bounds.MinPoint.Y - distance, bounds.MinPoint.Z)
-            Dim maxPt As New Point3d(bounds.MaxPoint.X + distance, bounds.MaxPoint.Y + distance, bounds.MaxPoint.Z)
-            Return New Extents3d(minPt, maxPt)
-        Catch ex As Exception
-            _logger.Warning("扩展边界框失败: " & ex.Message)
-            Return bounds
-        End Try
-    End Function
-
-    ' 获取图块属性
-    Public Function GetBlockAttributes(blockRefId As ObjectId) As Dictionary(Of String, String)
-        Dim attributes As New Dictionary(Of String, String)()
-        Try
-            Using tr As Transaction = _db.TransactionManager.StartTransaction()
-                Dim br = CType(tr.GetObject(blockRefId, OpenMode.ForRead), BlockReference)
-                If br IsNot Nothing Then
-                    For Each attId As ObjectId In br.AttributeCollection
-                        Dim att = CType(tr.GetObject(attId, OpenMode.ForRead), AttributeReference)
-                        If att IsNot Nothing Then
-                            attributes(att.Tag) = att.TextString
-                        End If
-                    Next
-                End If
-                tr.Commit()
-            End Using
-        Catch ex As Exception
-            _logger.Warning("获取图块属性失败: " & ex.Message)
-        End Try
-        Return attributes
-    End Function
-
-    ' 获取文字编号
-    Public Function GetTextNumber(text As String) As String
-        Try
-            Dim result = ""
-            For Each c As Char In text
-                If Char.IsDigit(c) Then
-                    result &= c
-                End If
-            Next
-            Return result
-        Catch ex As Exception
-            _logger.Warning("获取文字编号失败: " & ex.Message)
-            Return String.Empty
-        End Try
-    End Function
-
-    ' 自动编号命名
-    Public Function GetNewAutoNumName(template As String, index As Integer, total As Integer) As String
-        Try
-            Dim result As String = template
-            result = result.Replace("<INDEX>", index.ToString("D3"))
-            result = result.Replace("<TOTAL>", total.ToString("D3"))
-            result = result.Replace("<DATE>", DateTime.Now.ToString("yyyyMMdd"))
-            result = result.Replace("<TIME>", DateTime.Now.ToString("HHmmss"))
-            Return result
-        Catch ex As Exception
-            _logger.Warning("自动编号命名失败: " & ex.Message)
-            Return template
-        End Try
     End Function
 
     ' 批量渲染图框为图片文件（用于预览）

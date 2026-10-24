@@ -73,7 +73,7 @@ Partial Public Class MainForm
     Private WithEvents btnDeviceProps As Button
     Private lblPaperSize As Label
     Private cmbPaperSize As ComboBox
-    Private chkAutoMatch As CheckBox
+    Private WithEvents chkAutoMatch As CheckBox
     Private lblPlotStyle As Label
     Private cmbPlotStyle As ComboBox
     Private WithEvents btnEditStyle As Button
@@ -119,6 +119,12 @@ Partial Public Class MainForm
     Private chkModelSpaceScale As CheckBox
     Private radOverwrite As RadioButton
     Private radAutoRename As RadioButton
+    Private radSkipName As RadioButton
+
+    ' ========== 打印进度小窗（Show+DoEvents 模式） ==========
+    Private _plotProgressForm As Form
+    Private _plotProgressLabel As Label
+    Private _plotProgressBar As ProgressBar
 
     ' ========== 底部按钮 ==========
     Private WithEvents btnMultiDoc As Button
@@ -135,18 +141,12 @@ Partial Public Class MainForm
     Private _useSingleDocStyle As Boolean = False  ' 是否使用单文档内部打印样式
     Private _overlay As FrameSequenceOverlay  ' 图框序号临时标注（打印前在图上核对数量与顺序）
     Private _overlayDoc As Document  ' 序号标注所属文档（切换文档时重建）
-    ' 保存启动时的文档名称
-
     Public Sub New()
         InitializeComponent()
         ' 检查是否在设计时运行
         If Not System.ComponentModel.LicenseManager.UsageMode = System.ComponentModel.LicenseUsageMode.Designtime Then
             _plotEngine = New BatchPlotEngine()
             _frames = New List(Of BatchPlotEngine.FrameInfo)()
-            ' 保存原始文档名称
-            Dim doc = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
-            If doc IsNot Nothing Then
-            End If
             LoadSettings()
         Else
             _frames = New List(Of BatchPlotEngine.FrameInfo)()
@@ -237,6 +237,7 @@ Partial Public Class MainForm
         Me.chkModelSpaceScale = New System.Windows.Forms.CheckBox()
         Me.radOverwrite = New System.Windows.Forms.RadioButton()
         Me.radAutoRename = New System.Windows.Forms.RadioButton()
+        Me.radSkipName = New System.Windows.Forms.RadioButton()
         Me.btnMultiDoc = New System.Windows.Forms.Button()
         Me.btnPreview = New System.Windows.Forms.Button()
         Me.btnApply = New System.Windows.Forms.Button()
@@ -941,21 +942,29 @@ Partial Public Class MainForm
         '
         'radOverwrite
         '
-        Me.radOverwrite.Location = New System.Drawing.Point(9, 19)
+        Me.radOverwrite.Location = New System.Drawing.Point(6, 19)
         Me.radOverwrite.Name = "radOverwrite"
-        Me.radOverwrite.Size = New System.Drawing.Size(80, 20)
+        Me.radOverwrite.Size = New System.Drawing.Size(76, 20)
         Me.radOverwrite.TabIndex = 15
         Me.radOverwrite.Text = "覆盖重名"
         '
         'radAutoRename
         '
         Me.radAutoRename.Checked = true
-        Me.radAutoRename.Location = New System.Drawing.Point(137, 19)
+        Me.radAutoRename.Location = New System.Drawing.Point(84, 19)
         Me.radAutoRename.Name = "radAutoRename"
-        Me.radAutoRename.Size = New System.Drawing.Size(80, 20)
+        Me.radAutoRename.Size = New System.Drawing.Size(76, 20)
         Me.radAutoRename.TabIndex = 16
         Me.radAutoRename.TabStop = true
         Me.radAutoRename.Text = "自动顺延"
+        '
+        'radSkipName
+        '
+        Me.radSkipName.Location = New System.Drawing.Point(162, 19)
+        Me.radSkipName.Name = "radSkipName"
+        Me.radSkipName.Size = New System.Drawing.Size(76, 20)
+        Me.radSkipName.TabIndex = 17
+        Me.radSkipName.Text = "跳过重名"
         '
         'btnMultiDoc
         '
@@ -1075,6 +1084,7 @@ Partial Public Class MainForm
         '
         Me.GroupBox5.Controls.Add(Me.radOverwrite)
         Me.GroupBox5.Controls.Add(Me.radAutoRename)
+        Me.GroupBox5.Controls.Add(Me.radSkipName)
         Me.GroupBox5.Location = New System.Drawing.Point(561, 460)
         Me.GroupBox5.Name = "GroupBox5"
         Me.GroupBox5.Size = New System.Drawing.Size(249, 43)
@@ -1838,12 +1848,8 @@ End Sub
             settings.Collate = chkPlotByCopy.Checked
             settings.NameTemplate = txtNameTemplate.Text
             settings.UseDWGName = chkUseDWGName.Checked
-            ' 重名文件处理：覆盖或自动顺延
-            If radOverwrite.Checked Then
-                settings.DuplicateHandling = BatchPlotEngine.DuplicateFileHandling.Overwrite
-            Else
-                settings.DuplicateHandling = BatchPlotEngine.DuplicateFileHandling.AutoRename
-            End If
+            ' 重名文件处理：覆盖/自动顺延/跳过
+            settings.DuplicateHandling = GetSelectedDuplicateHandling()
 
             ' 打印比例
             If radAutoScale.Checked Then
@@ -1883,29 +1889,8 @@ End Sub
             ' 在图上标注打印顺序序号（不可打印图层，不影响出图），打印后仍可对照检查
             RefreshSequenceOverlay()
 
-            ' 打印区域
-            If radDirectPlot.Checked OrElse radPlotToFile.Checked Then
-                ' 直接打印或打印到文件：使用窗口（图框边界）
-                settings.PlotArea = BatchPlotEngine.PlotAreaType.Window
-            ElseIf radPlotExistingLayout.Checked Then
-                ' 打印已有布局：使用布局设置
-                settings.PlotArea = BatchPlotEngine.PlotAreaType.Layout
-            ElseIf radBatchCreateLayout.Checked Then
-                ' 批量生成布局：使用窗口（图框边界）
-                settings.PlotArea = BatchPlotEngine.PlotAreaType.Window
-            ElseIf radSplitArchive.Checked Then
-                ' 图纸拆分归档：使用范围
-                settings.PlotArea = BatchPlotEngine.PlotAreaType.Extents
-            Else
-                settings.PlotArea = BatchPlotEngine.PlotAreaType.Window
-            End If
-
             ' 打印戳记设置
             settings.PlotStamp = chkPlotStamp.Checked
-
-            ' 图块自匹配设置（仅在图框形式为图块时生效）
-            settings.AutoMatchBlock = radBlock.Checked AndAlso chkAutoMatch.Checked
-            settings.BlockNamePattern = txtBlockName.Text.Trim()
 
             ' 遍历布局设置
             settings.TraverseLayouts = chkTraverseLayouts.Checked
@@ -1915,7 +1900,7 @@ End Sub
 
             Dim progressCallback As Action(Of Integer, String) =
                 Sub(progress, message)
-                    Debug.WriteLine($"{progress}%: {message}")
+                    UpdatePlotProgress(progress, message)
                 End Sub
 
             ' 根据输出选项执行不同操作
@@ -1927,7 +1912,12 @@ End Sub
                 End If
                 ' 设置直接打印模式
                 settings.DirectPrint = True
-                _plotEngine.ExecuteBatchPlot(_frames, settings, progressCallback)
+                ShowPlotProgress("正在批量打印...")
+                Try
+                    _plotEngine.ExecuteBatchPlot(_frames, settings, progressCallback)
+                Finally
+                    ClosePlotProgress()
+                End Try
                 MessageBox.Show("批量打印任务已提交！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
 
             ElseIf radPlotToFile.Checked Then
@@ -1945,7 +1935,12 @@ End Sub
                 settings.OutputPath = outputPath
                 ' 设置打印到文件模式
                 settings.DirectPrint = False
-                _plotEngine.ExecuteBatchPlot(_frames, settings, progressCallback)
+                ShowPlotProgress("正在打印到文件...")
+                Try
+                    _plotEngine.ExecuteBatchPlot(_frames, settings, progressCallback)
+                Finally
+                    ClosePlotProgress()
+                End Try
                 MessageBox.Show("打印到文件任务已提交！文件将保存到: " & outputPath, "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
 
             ElseIf radSplitArchive.Checked Then
@@ -1956,13 +1951,13 @@ End Sub
                 End If
                 Dim archivePath As String = GetActualOutputPath()
                 ' 传递重名文件处理设置
-                Dim dupHandling As BatchPlotEngine.DuplicateFileHandling
-                If radOverwrite.Checked Then
-                    dupHandling = BatchPlotEngine.DuplicateFileHandling.Overwrite
-                Else
-                    dupHandling = BatchPlotEngine.DuplicateFileHandling.AutoRename
-                End If
-                _plotEngine.SplitAndArchive(_frames, archivePath, txtNameTemplate.Text, chkUseDWGName.Checked, progressCallback, dupHandling)
+                Dim dupHandling As BatchPlotEngine.DuplicateFileHandling = GetSelectedDuplicateHandling()
+                ShowPlotProgress("正在拆分归档...")
+                Try
+                    _plotEngine.SplitAndArchive(_frames, archivePath, txtNameTemplate.Text, chkUseDWGName.Checked, progressCallback, dupHandling)
+                Finally
+                    ClosePlotProgress()
+                End Try
                 MessageBox.Show("图纸拆分归档任务已提交！文件将保存到: " & archivePath, "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
 
             ElseIf radBatchCreateLayout.Checked Then
@@ -1972,13 +1967,13 @@ End Sub
                     Return
                 End If
                 ' 传递模型空间线型比例设置和重名文件处理设置
-                Dim dupHandling2 As BatchPlotEngine.DuplicateFileHandling
-                If radOverwrite.Checked Then
-                    dupHandling2 = BatchPlotEngine.DuplicateFileHandling.Overwrite
-                Else
-                    dupHandling2 = BatchPlotEngine.DuplicateFileHandling.AutoRename
-                End If
-                _plotEngine.BatchCreateLayouts(_frames, settings, progressCallback, chkModelSpaceScale.Checked, dupHandling2)
+                Dim dupHandling2 As BatchPlotEngine.DuplicateFileHandling = GetSelectedDuplicateHandling()
+                ShowPlotProgress("正在批量生成布局...")
+                Try
+                    _plotEngine.BatchCreateLayouts(_frames, settings, progressCallback, chkModelSpaceScale.Checked, dupHandling2)
+                Finally
+                    ClosePlotProgress()
+                End Try
                 ' 临时将主窗口置后，避免提示框被挡住
                 Me.TopMost = False
                 MessageBox.Show("批量生成布局任务已提交！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
@@ -1986,7 +1981,12 @@ End Sub
 
             ElseIf radPlotExistingLayout.Checked Then
                 ' 打印已有布局
-                _plotEngine.PlotExistingLayouts(settings, progressCallback)
+                ShowPlotProgress("正在打印已有布局...")
+                Try
+                    _plotEngine.PlotExistingLayouts(settings, progressCallback)
+                Finally
+                    ClosePlotProgress()
+                End Try
                 ' 临时将主窗口置后，避免提示框被挡住
                 Me.TopMost = False
                 MessageBox.Show("打印已有布局任务已提交！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
@@ -1996,14 +1996,6 @@ End Sub
         Catch ex As Exception
             MessageBox.Show("操作失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
-    End Sub
-
-    Private Sub SaveSettings()
-        Debug.WriteLine("保存设置...")
-        Debug.WriteLine($"打印设备: {cmbPlotDevice.SelectedItem}")
-        Debug.WriteLine($"图纸尺寸: {cmbPaperSize.SelectedItem}")
-        Debug.WriteLine($"打印样式: {cmbPlotStyle.SelectedItem}")
-        Debug.WriteLine($"保存路径: {txtSavePath.Text}")
     End Sub
 
     ''' <summary>
@@ -2054,6 +2046,81 @@ End Sub
     ''' <summary>
     ''' 保存控件状态到文件
     ''' </summary>
+    ' 读取重名文件处理单选项为引擎枚举值（覆盖/自动顺延/跳过）
+    Private Function GetSelectedDuplicateHandling() As BatchPlotEngine.DuplicateFileHandling
+        If radSkipName.Checked Then
+            Return BatchPlotEngine.DuplicateFileHandling.Skip
+        ElseIf radOverwrite.Checked Then
+            Return BatchPlotEngine.DuplicateFileHandling.Overwrite
+        Else
+            Return BatchPlotEngine.DuplicateFileHandling.AutoRename
+        End If
+    End Function
+
+    ' 显示打印进度小窗（带取消按钮），并重置取消标志；AutoCAD API 要求主线程同步执行
+    Private Sub ShowPlotProgress(title As String)
+        ClosePlotProgress()
+        _plotEngine.CancellationPending = False
+        _plotProgressForm = New Form()
+        _plotProgressForm.Text = title
+        _plotProgressForm.Size = New Drawing.Size(420, 160)
+        _plotProgressForm.StartPosition = FormStartPosition.CenterScreen
+        _plotProgressForm.FormBorderStyle = FormBorderStyle.FixedDialog
+        _plotProgressForm.MaximizeBox = False
+        _plotProgressForm.MinimizeBox = False
+        _plotProgressForm.TopMost = True
+        _plotProgressForm.ControlBox = False
+
+        _plotProgressLabel = New Label()
+        _plotProgressLabel.Text = title
+        _plotProgressLabel.Location = New Drawing.Point(20, 15)
+        _plotProgressLabel.Size = New Drawing.Size(360, 40)
+        _plotProgressLabel.Font = New Drawing.Font("Microsoft YaHei UI", 9)
+        _plotProgressForm.Controls.Add(_plotProgressLabel)
+
+        _plotProgressBar = New ProgressBar()
+        _plotProgressBar.Location = New Drawing.Point(20, 60)
+        _plotProgressBar.Size = New Drawing.Size(360, 25)
+        _plotProgressBar.Style = ProgressBarStyle.Continuous
+        _plotProgressForm.Controls.Add(_plotProgressBar)
+
+        Dim btnCancel As New Button()
+        btnCancel.Text = "取消"
+        btnCancel.Size = New Drawing.Size(80, 26)
+        btnCancel.Location = New Drawing.Point(300, 92)
+        AddHandler btnCancel.Click,
+            Sub()
+                _plotEngine.CancellationPending = True
+                btnCancel.Enabled = False
+                _plotProgressLabel.Text = "正在取消，等待当前任务完成..."
+            End Sub
+        _plotProgressForm.Controls.Add(btnCancel)
+
+        _plotProgressForm.Show()
+        System.Windows.Forms.Application.DoEvents()
+    End Sub
+
+    ' 关闭打印进度小窗并清空引用
+    Private Sub ClosePlotProgress()
+        If _plotProgressForm IsNot Nothing AndAlso Not _plotProgressForm.IsDisposed Then
+            _plotProgressForm.Close()
+        End If
+        _plotProgressForm = Nothing
+        _plotProgressLabel = Nothing
+        _plotProgressBar = Nothing
+    End Sub
+
+    ' 更新打印进度小窗并保持 UI 响应
+    Private Sub UpdatePlotProgress(percent As Integer, message As String)
+        If _plotProgressBar IsNot Nothing AndAlso Not _plotProgressBar.IsDisposed Then
+            _plotProgressBar.Value = Math.Max(0, Math.Min(percent, 100))
+        End If
+        If _plotProgressLabel IsNot Nothing AndAlso Not _plotProgressLabel.IsDisposed AndAlso Not String.IsNullOrEmpty(message) Then
+            _plotProgressLabel.Text = message
+        End If
+        System.Windows.Forms.Application.DoEvents()
+    End Sub
+
     Private Sub SaveUIState()
         Try
             Dim state As New Dictionary(Of String, String)()
@@ -2102,7 +2169,7 @@ End Sub
             state("NameTemplate") = txtNameTemplate.Text
             state("UseDWGName") = chkUseDWGName.Checked.ToString()
             state("TraverseLayouts") = chkTraverseLayouts.Checked.ToString()
-            state("DuplicateHandling") = If(radOverwrite.Checked, "Overwrite", "AutoRename")
+            state("DuplicateHandling") = If(radOverwrite.Checked, "Overwrite", If(radSkipName.Checked, "Skip", "AutoRename"))
 
             ' 保存图块/图层设置
             state("BlockName") = txtBlockName.Text
@@ -2260,6 +2327,8 @@ End Sub
             If state.ContainsKey("DuplicateHandling") Then
                 If state("DuplicateHandling") = "Overwrite" Then
                     radOverwrite.Checked = True
+                ElseIf state("DuplicateHandling") = "Skip" Then
+                    radSkipName.Checked = True
                 Else
                     radAutoRename.Checked = True
                 End If
@@ -2365,12 +2434,8 @@ End Sub
                 settings.OffsetY = CDbl(Val(txtOffsetY.Text))
             End If
 
-            ' 重名文件处理：覆盖或自动顺延
-            If radOverwrite.Checked Then
-                settings.DuplicateHandling = BatchPlotEngine.DuplicateFileHandling.Overwrite
-            Else
-                settings.DuplicateHandling = BatchPlotEngine.DuplicateFileHandling.AutoRename
-            End If
+            ' 重名文件处理：覆盖/自动顺延/跳过
+            settings.DuplicateHandling = GetSelectedDuplicateHandling()
 
             ' 输出类型
             ' 遍历布局设置
@@ -2378,12 +2443,19 @@ End Sub
 
             Dim progressCallback As Action(Of Integer, String) =
                 Sub(progress, message)
-                    ' 进度回调
+                    UpdatePlotProgress(progress, message)
                 End Sub
 
-            ' 遍历每个文件执行打印
+            ' 遍历每个文件执行打印（整个过程共用一个进度窗，可在窗口中取消）
             Dim totalFiles As Integer = _multiDocFiles.Count
+            Dim processedFiles As Integer = 0
+            ShowPlotProgress("正在多文档打印...")
             For i = 0 To totalFiles - 1
+                ' 用户取消：当前文件打印完成后停止处理后续文件
+                If _plotEngine.CancellationPending Then
+                    Logger.GetInstance().Info("用户取消，停止多文档打印")
+                    Exit For
+                End If
                 Dim filePath As String = _multiDocFiles(i)
                 Dim fileName As String = Path.GetFileName(filePath)
 
@@ -2462,21 +2534,11 @@ End Sub
                         If String.IsNullOrEmpty(archivePath) Then
                             archivePath = Path.GetDirectoryName(filePath)
                         End If
-                        Dim dupHandling As BatchPlotEngine.DuplicateFileHandling
-                        If radOverwrite.Checked Then
-                            dupHandling = BatchPlotEngine.DuplicateFileHandling.Overwrite
-                        Else
-                            dupHandling = BatchPlotEngine.DuplicateFileHandling.AutoRename
-                        End If
+                        Dim dupHandling As BatchPlotEngine.DuplicateFileHandling = GetSelectedDuplicateHandling()
                         _plotEngine.SplitAndArchive(frames, archivePath, txtNameTemplate.Text, chkUseDWGName.Checked, progressCallback, dupHandling)
                     ElseIf radBatchCreateLayout.Checked Then
                         ' 批量生成布局
-                        Dim dupHandling2 As BatchPlotEngine.DuplicateFileHandling
-                        If radOverwrite.Checked Then
-                            dupHandling2 = BatchPlotEngine.DuplicateFileHandling.Overwrite
-                        Else
-                            dupHandling2 = BatchPlotEngine.DuplicateFileHandling.AutoRename
-                        End If
+                        Dim dupHandling2 As BatchPlotEngine.DuplicateFileHandling = GetSelectedDuplicateHandling()
                         _plotEngine.BatchCreateLayouts(frames, settings, progressCallback, chkModelSpaceScale.Checked, dupHandling2)
                     ElseIf radPlotExistingLayout.Checked Then
                         ' 打印已有布局
@@ -2489,15 +2551,24 @@ End Sub
                 End Try
 
                 ' 更新进度
+                processedFiles += 1
                 progressCallback?.Invoke(CInt(((i + 1) / totalFiles) * 100), $"已完成: {fileName}")
             Next
 
-            MessageBox.Show($"多文档打印任务已完成！共处理 {totalFiles} 个文件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            ClosePlotProgress()
+
+            If _plotEngine.CancellationPending Then
+                _plotEngine.CancellationPending = False
+                MessageBox.Show($"多文档打印已取消，已处理 {processedFiles}/{totalFiles} 个文件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Else
+                MessageBox.Show($"多文档打印任务已完成！共处理 {totalFiles} 个文件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+            End If
 
             ' 清空多文档文件列表
             _multiDocFiles.Clear()
 
         Catch ex As Exception
+            ClosePlotProgress()
             MessageBox.Show("多文档打印失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
     End Sub
@@ -3053,6 +3124,7 @@ End Sub
             chkModelSpaceScale.Enabled = False
             radOverwrite.Enabled = False
             radAutoRename.Enabled = False
+            radSkipName.Enabled = False
             chkTraverseLayouts.Enabled = True
             lblCopies.Enabled = True
             txtCopies.Enabled = True
@@ -3075,6 +3147,7 @@ End Sub
             chkModelSpaceScale.Enabled = False
             radOverwrite.Enabled = True
             radAutoRename.Enabled = True
+            radSkipName.Enabled = True
             chkTraverseLayouts.Enabled = True
             lblCopies.Enabled = False
             txtCopies.Enabled = False
@@ -3093,6 +3166,7 @@ End Sub
             chkModelSpaceScale.Enabled = False
             radOverwrite.Enabled = True
             radAutoRename.Enabled = True
+            radSkipName.Enabled = True
             lblCopies.Enabled = False
             txtCopies.Enabled = False
             chkPlotByCopy.Enabled = False
@@ -3136,6 +3210,7 @@ End Sub
             chkModelSpaceScale.Enabled = True
             radOverwrite.Enabled = True
             radAutoRename.Enabled = True
+            radSkipName.Enabled = True
             lblCopies.Enabled = False
             txtCopies.Enabled = False
             chkPlotByCopy.Enabled = False
@@ -3157,6 +3232,7 @@ End Sub
             chkModelSpaceScale.Enabled = False
             radOverwrite.Enabled = False
             radAutoRename.Enabled = False
+            radSkipName.Enabled = False
             lblCopies.Enabled = False
             txtCopies.Enabled = False
             chkPlotByCopy.Enabled = False
@@ -3327,15 +3403,37 @@ End Sub
         radOtherPath.Enabled = True
     End Sub
 
+    ' 图块自匹配：勾选时自动识别图纸中面积最大的块作为图框块并填入块名
+    Private Sub ChkAutoMatch_CheckedChanged(sender As Object, e As EventArgs) Handles chkAutoMatch.CheckedChanged
+        Try
+            If Not chkAutoMatch.Checked OrElse Not radBlock.Checked Then Return
+
+            Dim detected As String = Nothing
+            If _plotEngine IsNot Nothing Then
+                detected = _plotEngine.AutoDetectFrameBlockName()
+            End If
+
+            If String.IsNullOrEmpty(detected) Then
+                MessageBox.Show("未在图纸中找到可作为图框的图块，请手动输入图块名", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
+
+            txtBlockName.Text = detected
+        Catch ex As Exception
+            MessageBox.Show("自动识别图框图块失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Sub
+
     ' 图块设置 - 设置图框图块对应的纸张
     Private Sub BtnBlockSettings_Click(sender As Object, e As EventArgs) Handles btnBlockSettings.Click
         Try
             ' 显示图块对应纸张设置对话框
             Using frm As New BlockPaperSettingsForm(_plotEngine)
                 If frm.ShowDialog() = DialogResult.OK Then
-                    Dim settings = frm.GetSettings()
-                    If settings.Count > 0 Then
-                        MessageBox.Show($"已保存 {settings.Count} 个图块纸张设置", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                    ' 确定时窗体已把全部列表持久化到配置文件，打印引擎会自动应用
+                    Dim totalLists = BlockPaperStore.LoadAllLists().Count
+                    If totalLists > 0 Then
+                        MessageBox.Show($"图块纸张设置已保存（共 {totalLists} 个图块列表）", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
                     End If
                 End If
             End Using

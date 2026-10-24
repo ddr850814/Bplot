@@ -76,6 +76,61 @@ Public Class FrameDetector
         Return frames
     End Function
 
+    ' 自动识别图框图块：扫描所有布局空间中的块参照，返回单实例外包面积最大的块名
+    ' 图框块通常是图中尺寸最大的矩形块，勾选"图块自匹配"时无需用户手动输入/框选块名
+    Public Function AutoDetectFrameBlockName() As String
+        Try
+            Using tr As Transaction = _db.TransactionManager.StartTransaction()
+                Dim bt = CType(tr.GetObject(_db.BlockTableId, OpenMode.ForRead), BlockTable)
+                Dim bestName As String = ""
+                Dim bestArea As Double = 0
+
+                For Each btrId As ObjectId In bt
+                    Dim btr = CType(tr.GetObject(btrId, OpenMode.ForRead), BlockTableRecord)
+                    ' 只扫描布局空间（模型空间+图纸空间）中的直接插入
+                    If Not btr.IsLayout Then Continue For
+
+                    For Each objId As ObjectId In btr
+                        If objId.ObjectClass.DxfName <> "INSERT" Then Continue For
+                        Dim br = TryCast(tr.GetObject(objId, OpenMode.ForRead), BlockReference)
+                        If br Is Nothing Then Continue For
+
+                        ' 动态块须解析原始定义名，匿名名（*U###）无匹配意义
+                        Dim blockName As String = br.Name
+                        If br.IsDynamicBlock Then
+                            Try
+                                Dim dynBtr = CType(tr.GetObject(br.DynamicBlockTableRecord, OpenMode.ForRead), BlockTableRecord)
+                                blockName = dynBtr.Name
+                            Catch
+                                Continue For
+                            End Try
+                        End If
+                        If String.IsNullOrEmpty(blockName) OrElse blockName.StartsWith("*") Then Continue For
+
+                        Dim extents As Extents3d
+                        Try
+                            extents = br.GeometricExtents
+                        Catch
+                            Continue For ' 空块/无可见几何
+                        End Try
+
+                        Dim area As Double = (extents.MaxPoint.X - extents.MinPoint.X) * (extents.MaxPoint.Y - extents.MinPoint.Y)
+                        If area > bestArea Then
+                            bestArea = area
+                            bestName = blockName
+                        End If
+                    Next
+                Next
+
+                tr.Commit()
+                Return bestName
+            End Using
+        Catch ex As Exception
+            _logger.Error("自动识别图框图块失败", ex)
+            Return ""
+        End Try
+    End Function
+
     ' 通过多段线识别图框
     Public Function DetectFramesByPolyline(layerName As String, Optional settings As BatchPlotEngine.PlotSettings = Nothing) As List(Of BatchPlotEngine.FrameInfo)
         Dim frames As New List(Of BatchPlotEngine.FrameInfo)()
