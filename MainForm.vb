@@ -244,23 +244,23 @@ Partial Public Class MainForm
         Me.btnOK = New System.Windows.Forms.Button()
         Me.btnCancel = New System.Windows.Forms.Button()
         Me.btnContact = New System.Windows.Forms.Button()
-        Me.GroupBox1 = New System.Windows.Forms.GroupBox()
+        Me.grpPlotScale = New System.Windows.Forms.GroupBox()
         Me.Label1 = New System.Windows.Forms.Label()
-        Me.GroupBox2 = New System.Windows.Forms.GroupBox()
-        Me.GroupBox3 = New System.Windows.Forms.GroupBox()
-        Me.GroupBox4 = New System.Windows.Forms.GroupBox()
-        Me.GroupBox5 = New System.Windows.Forms.GroupBox()
+        Me.grpPlotOrder = New System.Windows.Forms.GroupBox()
+        Me.grpPaperPosition = New System.Windows.Forms.GroupBox()
+        Me.grpLayoutSettings = New System.Windows.Forms.GroupBox()
+        Me.grpNameConflict = New System.Windows.Forms.GroupBox()
         Me.grpFrameType.SuspendLayout
         Me.grpBlockLayer.SuspendLayout
         Me.grpOutputOption.SuspendLayout
         Me.grpSelectDrawing.SuspendLayout
         Me.grpPlotSettings.SuspendLayout
         Me.grpFileLayout.SuspendLayout
-        Me.GroupBox1.SuspendLayout
-        Me.GroupBox2.SuspendLayout
-        Me.GroupBox3.SuspendLayout
-        Me.GroupBox4.SuspendLayout
-        Me.GroupBox5.SuspendLayout
+        Me.grpPlotScale.SuspendLayout
+        Me.grpPlotOrder.SuspendLayout
+        Me.grpPaperPosition.SuspendLayout
+        Me.grpLayoutSettings.SuspendLayout
+        Me.grpNameConflict.SuspendLayout
         Me.SuspendLayout
         '
         'grpFrameType
@@ -1015,19 +1015,19 @@ Partial Public Class MainForm
         Me.btnContact.TabIndex = 31
         Me.btnContact.Text = "联系(&L)"
         '
-        'GroupBox1
+        'grpPlotScale
         '
-        Me.GroupBox1.Controls.Add(Me.Label1)
-        Me.GroupBox1.Controls.Add(Me.radAutoScale)
-        Me.GroupBox1.Controls.Add(Me.radFitToPaper)
-        Me.GroupBox1.Controls.Add(Me.radFixedScale)
-        Me.GroupBox1.Controls.Add(Me.txtScale)
-        Me.GroupBox1.Location = New System.Drawing.Point(260, 184)
-        Me.GroupBox1.Name = "GroupBox1"
-        Me.GroupBox1.Size = New System.Drawing.Size(263, 94)
-        Me.GroupBox1.TabIndex = 32
-        Me.GroupBox1.TabStop = false
-        Me.GroupBox1.Text = "打印比例"
+        Me.grpPlotScale.Controls.Add(Me.Label1)
+        Me.grpPlotScale.Controls.Add(Me.radAutoScale)
+        Me.grpPlotScale.Controls.Add(Me.radFitToPaper)
+        Me.grpPlotScale.Controls.Add(Me.radFixedScale)
+        Me.grpPlotScale.Controls.Add(Me.txtScale)
+        Me.grpPlotScale.Location = New System.Drawing.Point(260, 184)
+        Me.grpPlotScale.Name = "grpPlotScale"
+        Me.grpPlotScale.Size = New System.Drawing.Size(263, 94)
+        Me.grpPlotScale.TabIndex = 32
+        Me.grpPlotScale.TabStop = false
+        Me.grpPlotScale.Text = "打印比例"
         '
         'Label1
         '
@@ -1038,68 +1038,72 @@ Partial Public Class MainForm
         Me.Label1.TabIndex = 10
         Me.Label1.Text = "1:"
         '
-        'GroupBox2
+        'grpPlotOrder
         '
-        Me.GroupBox2.Controls.Add(Me.radSelectOrder)
-        Me.GroupBox2.Controls.Add(Me.radLeftRight)
-        Me.GroupBox2.Controls.Add(Me.radTopBottom)
-        Me.GroupBox2.Controls.Add(Me.chkReverseOrder)
-        Me.GroupBox2.Controls.Add(Me.chkPlotByCopy)
-        Me.GroupBox2.Location = New System.Drawing.Point(529, 184)
-        Me.GroupBox2.Name = "GroupBox2"
-        Me.GroupBox2.Size = New System.Drawing.Size(281, 94)
-        Me.GroupBox2.TabIndex = 33
-        Me.GroupBox2.TabStop = false
-        Me.GroupBox2.Text = "打印顺序"
+        Me.grpPlotOrder.Controls.Add(Me.radSelectOrder)
+        Me.grpPlotOrder.Controls.Add(Me.radLeftRight)
+        Me.grpPlotOrder.Controls.Add(Me.radTopBottom)
+        Me.grpPlotOrder.Controls.Add(Me.chkReverseOrder)
+        Me.grpPlotOrder.Controls.Add(Me.chkPlotByCopy)
+        Me.grpPlotOrder.Location = New System.Drawing.Point(529, 184)
+        Me.grpPlotOrder.Name = "grpPlotOrder"
+        Me.grpPlotOrder.Size = New System.Drawing.Size(281, 94)
+        Me.grpPlotOrder.TabIndex = 33
+        Me.grpPlotOrder.TabStop = false
+        Me.grpPlotOrder.Text = "打印顺序"
         '
-        'GroupBox3
+        'grpPaperPosition
         '
-        Me.GroupBox3.Controls.Add(Me.chkAutoRotate)
-        Me.GroupBox3.Controls.Add(Me.chkReverse)
-        Me.GroupBox3.Controls.Add(Me.radAutoCenter)
-        Me.GroupBox3.Controls.Add(Me.radOffset)
-        Me.GroupBox3.Controls.Add(Me.txtOffsetY)
-        Me.GroupBox3.Controls.Add(Me.lblOffsetY)
-        Me.GroupBox3.Controls.Add(Me.txtOffsetX)
-        Me.GroupBox3.Controls.Add(Me.lblOffsetX)
-        Me.GroupBox3.Location = New System.Drawing.Point(260, 286)
-        Me.GroupBox3.Name = "GroupBox3"
-        Me.GroupBox3.Size = New System.Drawing.Size(550, 43)
-        Me.GroupBox3.TabIndex = 34
-        Me.GroupBox3.TabStop = false
-        Me.GroupBox3.Text = "图纸定位"
+        Me.grpPaperPosition.Controls.Add(Me.chkAutoRotate)
+        Me.grpPaperPosition.Controls.Add(Me.chkReverse)
+        Me.grpPaperPosition.Controls.Add(Me.radAutoCenter)
+        Me.grpPaperPosition.Controls.Add(Me.radOffset)
+        Me.grpPaperPosition.Controls.Add(Me.txtOffsetY)
+        Me.grpPaperPosition.Controls.Add(Me.lblOffsetY)
+        Me.grpPaperPosition.Controls.Add(Me.txtOffsetX)
+        Me.grpPaperPosition.Controls.Add(Me.lblOffsetX)
+        Me.grpPaperPosition.Location = New System.Drawing.Point(260, 286)
+        Me.grpPaperPosition.Name = "grpPaperPosition"
+        Me.grpPaperPosition.Size = New System.Drawing.Size(550, 43)
+        Me.grpPaperPosition.TabIndex = 34
+        Me.grpPaperPosition.TabStop = false
+        Me.grpPaperPosition.Text = "图纸定位"
         '
-        'GroupBox4
+        'grpLayoutSettings
         '
-        Me.GroupBox4.Controls.Add(Me.chkTraverseLayouts)
-        Me.GroupBox4.Controls.Add(Me.chkModelSpaceScale)
-        Me.GroupBox4.Location = New System.Drawing.Point(260, 460)
-        Me.GroupBox4.Name = "GroupBox4"
-        Me.GroupBox4.Size = New System.Drawing.Size(295, 44)
-        Me.GroupBox4.TabIndex = 35
-        Me.GroupBox4.TabStop = false
-        Me.GroupBox4.Text = "布局设置"
+        Me.grpLayoutSettings.Controls.Add(Me.chkTraverseLayouts)
+        Me.grpLayoutSettings.Controls.Add(Me.chkModelSpaceScale)
+        Me.grpLayoutSettings.Location = New System.Drawing.Point(260, 460)
+        Me.grpLayoutSettings.Name = "grpLayoutSettings"
+        Me.grpLayoutSettings.Size = New System.Drawing.Size(295, 44)
+        Me.grpLayoutSettings.TabIndex = 35
+        Me.grpLayoutSettings.TabStop = false
+        Me.grpLayoutSettings.Text = "布局设置"
         '
-        'GroupBox5
+        'grpNameConflict
         '
-        Me.GroupBox5.Controls.Add(Me.radOverwrite)
-        Me.GroupBox5.Controls.Add(Me.radAutoRename)
-        Me.GroupBox5.Controls.Add(Me.radSkipName)
-        Me.GroupBox5.Location = New System.Drawing.Point(561, 460)
-        Me.GroupBox5.Name = "GroupBox5"
-        Me.GroupBox5.Size = New System.Drawing.Size(249, 43)
-        Me.GroupBox5.TabIndex = 36
-        Me.GroupBox5.TabStop = false
-        Me.GroupBox5.Text = "重名文件设置"
+        Me.grpNameConflict.Controls.Add(Me.radOverwrite)
+        Me.grpNameConflict.Controls.Add(Me.radAutoRename)
+        Me.grpNameConflict.Controls.Add(Me.radSkipName)
+        Me.grpNameConflict.Location = New System.Drawing.Point(561, 460)
+        Me.grpNameConflict.Name = "grpNameConflict"
+        Me.grpNameConflict.Size = New System.Drawing.Size(249, 43)
+        Me.grpNameConflict.TabIndex = 36
+        Me.grpNameConflict.TabStop = false
+        Me.grpNameConflict.Text = "重名文件设置"
         '
         'MainForm
         '
+        Me.AutoScaleDimensions = New System.Drawing.SizeF(6!, 12!)
+        Me.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font
+        Me.AcceptButton = Me.btnOK
+        Me.CancelButton = Me.btnCancel
         Me.ClientSize = New System.Drawing.Size(820, 552)
-        Me.Controls.Add(Me.GroupBox5)
-        Me.Controls.Add(Me.GroupBox3)
-        Me.Controls.Add(Me.GroupBox4)
-        Me.Controls.Add(Me.GroupBox2)
-        Me.Controls.Add(Me.GroupBox1)
+        Me.Controls.Add(Me.grpNameConflict)
+        Me.Controls.Add(Me.grpPaperPosition)
+        Me.Controls.Add(Me.grpLayoutSettings)
+        Me.Controls.Add(Me.grpPlotOrder)
+        Me.Controls.Add(Me.grpPlotScale)
         Me.Controls.Add(Me.grpFrameType)
         Me.Controls.Add(Me.grpBlockLayer)
         Me.Controls.Add(Me.grpOutputOption)
@@ -1127,13 +1131,13 @@ Partial Public Class MainForm
         Me.grpPlotSettings.PerformLayout
         Me.grpFileLayout.ResumeLayout(false)
         Me.grpFileLayout.PerformLayout
-        Me.GroupBox1.ResumeLayout(false)
-        Me.GroupBox1.PerformLayout
-        Me.GroupBox2.ResumeLayout(false)
-        Me.GroupBox3.ResumeLayout(false)
-        Me.GroupBox3.PerformLayout
-        Me.GroupBox4.ResumeLayout(false)
-        Me.GroupBox5.ResumeLayout(false)
+        Me.grpPlotScale.ResumeLayout(false)
+        Me.grpPlotScale.PerformLayout
+        Me.grpPlotOrder.ResumeLayout(false)
+        Me.grpPaperPosition.ResumeLayout(false)
+        Me.grpPaperPosition.PerformLayout
+        Me.grpLayoutSettings.ResumeLayout(false)
+        Me.grpNameConflict.ResumeLayout(false)
         Me.ResumeLayout(false)
 
 End Sub

@@ -16,6 +16,8 @@ Public Class SelectionForm
     End Property
 
     Public Sub New(title As String, items As List(Of String))
+        AutoScaleDimensions = New SizeF(6.0F, 12.0F)
+        AutoScaleMode = AutoScaleMode.Font
         Text = title
         Size = New Size(320, 450)
         StartPosition = FormStartPosition.CenterScreen

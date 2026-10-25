@@ -16,10 +16,10 @@ Partial Class MainForm
 
     'Windows 窗体设计器所必需的
     Private components As System.ComponentModel.IContainer
-    Friend WithEvents GroupBox1 As System.Windows.Forms.GroupBox
-    Friend WithEvents GroupBox2 As System.Windows.Forms.GroupBox
-    Friend WithEvents GroupBox3 As System.Windows.Forms.GroupBox
+    Friend WithEvents grpPlotScale As System.Windows.Forms.GroupBox
+    Friend WithEvents grpPlotOrder As System.Windows.Forms.GroupBox
+    Friend WithEvents grpPaperPosition As System.Windows.Forms.GroupBox
     Friend WithEvents Label1 As System.Windows.Forms.Label
-    Friend WithEvents GroupBox5 As System.Windows.Forms.GroupBox
-    Friend WithEvents GroupBox4 As System.Windows.Forms.GroupBox
+    Friend WithEvents grpNameConflict As System.Windows.Forms.GroupBox
+    Friend WithEvents grpLayoutSettings As System.Windows.Forms.GroupBox
 End Class

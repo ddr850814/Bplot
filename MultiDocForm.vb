@@ -206,6 +206,10 @@ Public Class MultiDocForm
         '
         'MultiDocForm
         '
+        AutoScaleDimensions = New Drawing.SizeF(6.0F, 12.0F)
+        AutoScaleMode = AutoScaleMode.Font
+        AcceptButton = btnOK
+        CancelButton = btnCancel
         ClientSize = New Drawing.Size(634, 481)
         Controls.Add(lblFolder)
         Controls.Add(txtFolder)

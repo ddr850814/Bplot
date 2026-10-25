@@ -169,6 +169,8 @@ Public Class BlockPaperSettingsForm
         '
         'BlockPaperSettingsForm
         '
+        AutoScaleDimensions = New Drawing.SizeF(6.0F, 12.0F)
+        AutoScaleMode = AutoScaleMode.Font
         AcceptButton = btnSave
         CancelButton = btnCancel
         ClientSize = New Drawing.Size(363, 411)

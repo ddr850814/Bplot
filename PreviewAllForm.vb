@@ -40,9 +40,12 @@ Public Class PreviewAllForm
     End Sub
 
     Private Sub SetupForm()
+        AutoScaleDimensions = New SizeF(6.0F, 12.0F)
+        AutoScaleMode = AutoScaleMode.Font
         Text = "批量预览 - 图框总览"
         Size = New Size(960, 720)
-        MinimumSize = New Size(640, 480)
+        ' 底部按钮行宽度约 540px（320→860），最小宽度必须容纳按钮行，否则右侧按钮被裁掉
+        MinimumSize = New Size(880, 480)
         StartPosition = FormStartPosition.CenterScreen
         FormBorderStyle = FormBorderStyle.Sizable
         MaximizeBox = True
@@ -67,6 +70,7 @@ Public Class PreviewAllForm
         btnSelectAll.Text = "全选"
         btnSelectAll.Size = New Size(70, 32)
         btnSelectAll.Location = New Point(320, 9)
+        btnSelectAll.Anchor = AnchorStyles.Right Or AnchorStyles.Bottom
         AddHandler btnSelectAll.Click, AddressOf OnSelectAll
         panelBottom.Controls.Add(btnSelectAll)
 
@@ -74,6 +78,7 @@ Public Class PreviewAllForm
         btnDeselectAll.Text = "取消全选"
         btnDeselectAll.Size = New Size(85, 32)
         btnDeselectAll.Location = New Point(400, 9)
+        btnDeselectAll.Anchor = AnchorStyles.Right Or AnchorStyles.Bottom
         AddHandler btnDeselectAll.Click, AddressOf OnDeselectAll
         panelBottom.Controls.Add(btnDeselectAll)
 
@@ -81,6 +86,7 @@ Public Class PreviewAllForm
         btnInvertSelect.Text = "反选"
         btnInvertSelect.Size = New Size(70, 32)
         btnInvertSelect.Location = New Point(495, 9)
+        btnInvertSelect.Anchor = AnchorStyles.Right Or AnchorStyles.Bottom
         AddHandler btnInvertSelect.Click, AddressOf OnInvertSelect
         panelBottom.Controls.Add(btnInvertSelect)
 
@@ -88,6 +94,7 @@ Public Class PreviewAllForm
         btnPreviewSelected.Text = "预览选中"
         btnPreviewSelected.Size = New Size(90, 32)
         btnPreviewSelected.Location = New Point(690, 9)
+        btnPreviewSelected.Anchor = AnchorStyles.Right Or AnchorStyles.Bottom
         btnPreviewSelected.Enabled = False
         AddHandler btnPreviewSelected.Click, AddressOf OnPreviewSelected
         panelBottom.Controls.Add(btnPreviewSelected)
@@ -96,6 +103,7 @@ Public Class PreviewAllForm
         btnClose.Text = "关闭"
         btnClose.Size = New Size(70, 32)
         btnClose.Location = New Point(790, 9)
+        btnClose.Anchor = AnchorStyles.Right Or AnchorStyles.Bottom
         AddHandler btnClose.Click, AddressOf OnClose
         panelBottom.Controls.Add(btnClose)
 
