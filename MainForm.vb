@@ -1142,7 +1142,7 @@ Partial Public Class MainForm
         Me.grpNameConflict.ResumeLayout(false)
         Me.ResumeLayout(false)
 
-End Sub
+    End Sub
 
     Private Sub LoadSettings()
         Try
@@ -1582,58 +1582,58 @@ End Sub
 
                 ' 非模态窗体回调写数据库必须持文档锁，否则 ForWrite/AppendEntity 抛 eLockViolation
                 Using docLock = doc.LockDocument()
-                Using tr As Transaction = doc.Database.TransactionManager.StartTransaction()
-                    ' 计算包围范围
-                    Dim minPt As New Point3d(Double.MaxValue, Double.MaxValue, Double.MaxValue)
-                    Dim maxPt As New Point3d(Double.MinValue, Double.MinValue, Double.MinValue)
-                    Dim hasValidObject = False
+                    Using tr As Transaction = doc.Database.TransactionManager.StartTransaction()
+                        ' 计算包围范围
+                        Dim minPt As New Point3d(Double.MaxValue, Double.MaxValue, Double.MaxValue)
+                        Dim maxPt As New Point3d(Double.MinValue, Double.MinValue, Double.MinValue)
+                        Dim hasValidObject = False
 
-                    For Each id As ObjectId In result.Value.GetObjectIds()
-                        Try
-                            Dim ent = CType(tr.GetObject(id, OpenMode.ForRead), Entity)
-                            If ent IsNot Nothing Then
-                                Dim ext As Extents3d = ent.GeometricExtents
-                                minPt = New Point3d(Math.Min(minPt.X, ext.MinPoint.X),
-                                                   Math.Min(minPt.Y, ext.MinPoint.Y),
-                                                   Math.Min(minPt.Z, ext.MinPoint.Z))
-                                maxPt = New Point3d(Math.Max(maxPt.X, ext.MaxPoint.X),
-                                                   Math.Max(maxPt.Y, ext.MaxPoint.Y),
-                                                   Math.Max(maxPt.Z, ext.MaxPoint.Z))
-                                hasValidObject = True
-                            End If
-                        Catch
-                        End Try
-                    Next
+                        For Each id As ObjectId In result.Value.GetObjectIds()
+                            Try
+                                Dim ent = CType(tr.GetObject(id, OpenMode.ForRead), Entity)
+                                If ent IsNot Nothing Then
+                                    Dim ext As Extents3d = ent.GeometricExtents
+                                    minPt = New Point3d(Math.Min(minPt.X, ext.MinPoint.X),
+                                                       Math.Min(minPt.Y, ext.MinPoint.Y),
+                                                       Math.Min(minPt.Z, ext.MinPoint.Z))
+                                    maxPt = New Point3d(Math.Max(maxPt.X, ext.MaxPoint.X),
+                                                       Math.Max(maxPt.Y, ext.MaxPoint.Y),
+                                                       Math.Max(maxPt.Z, ext.MaxPoint.Z))
+                                    hasValidObject = True
+                                End If
+                            Catch
+                            End Try
+                        Next
 
-                    If hasValidObject Then
-                        Dim bounds As New Extents3d(minPt, maxPt)
+                        If hasValidObject Then
+                            Dim bounds As New Extents3d(minPt, maxPt)
 
-                        ' 应用偏移距离
-                        Dim offsetX As Double = offsetDist
-                        Dim offsetY As Double = offsetDist
-                        Dim adjustedMinPt As New Point3d(bounds.MinPoint.X - offsetX, bounds.MinPoint.Y - offsetY, bounds.MinPoint.Z)
-                        Dim adjustedMaxPt As New Point3d(bounds.MaxPoint.X + offsetX, bounds.MaxPoint.Y + offsetY, bounds.MaxPoint.Z)
+                            ' 应用偏移距离
+                            Dim offsetX As Double = offsetDist
+                            Dim offsetY As Double = offsetDist
+                            Dim adjustedMinPt As New Point3d(bounds.MinPoint.X - offsetX, bounds.MinPoint.Y - offsetY, bounds.MinPoint.Z)
+                            Dim adjustedMaxPt As New Point3d(bounds.MaxPoint.X + offsetX, bounds.MaxPoint.Y + offsetY, bounds.MaxPoint.Z)
 
-                        ' 创建包围框多段线
-                        Dim bt = CType(tr.GetObject(doc.Database.BlockTableId, OpenMode.ForRead), BlockTable)
-                        Dim modelSpace = CType(tr.GetObject(bt(BlockTableRecord.ModelSpace), OpenMode.ForWrite), BlockTableRecord)
+                            ' 创建包围框多段线
+                            Dim bt = CType(tr.GetObject(doc.Database.BlockTableId, OpenMode.ForRead), BlockTable)
+                            Dim modelSpace = CType(tr.GetObject(bt(BlockTableRecord.ModelSpace), OpenMode.ForWrite), BlockTableRecord)
 
-                        Dim pl As New Polyline()
-                        pl.AddVertexAt(0, New Point2d(adjustedMinPt.X, adjustedMinPt.Y), 0, 0, 0)
-                        pl.AddVertexAt(1, New Point2d(adjustedMaxPt.X, adjustedMinPt.Y), 0, 0, 0)
-                        pl.AddVertexAt(2, New Point2d(adjustedMaxPt.X, adjustedMaxPt.Y), 0, 0, 0)
-                        pl.AddVertexAt(3, New Point2d(adjustedMinPt.X, adjustedMaxPt.Y), 0, 0, 0)
-                        pl.Closed = True
-                        pl.Layer = "0"
+                            Dim pl As New Polyline()
+                            pl.AddVertexAt(0, New Point2d(adjustedMinPt.X, adjustedMinPt.Y), 0, 0, 0)
+                            pl.AddVertexAt(1, New Point2d(adjustedMaxPt.X, adjustedMinPt.Y), 0, 0, 0)
+                            pl.AddVertexAt(2, New Point2d(adjustedMaxPt.X, adjustedMaxPt.Y), 0, 0, 0)
+                            pl.AddVertexAt(3, New Point2d(adjustedMinPt.X, adjustedMaxPt.Y), 0, 0, 0)
+                            pl.Closed = True
+                            pl.Layer = "0"
 
-                        modelSpace.AppendEntity(pl)
-                        tr.AddNewlyCreatedDBObject(pl, True)
-                        tr.Commit()
-                        ed.WriteMessage(vbLf & "包围框创建成功！")
-                    Else
-                        ed.WriteMessage(vbLf & "无法计算包围框。")
-                    End If
-                End Using
+                            modelSpace.AppendEntity(pl)
+                            tr.AddNewlyCreatedDBObject(pl, True)
+                            tr.Commit()
+                            ed.WriteMessage(vbLf & "包围框创建成功！")
+                        Else
+                            ed.WriteMessage(vbLf & "无法计算包围框。")
+                        End If
+                    End Using
                 End Using
             End If
 

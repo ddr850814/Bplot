@@ -1,6 +1,6 @@
-Imports System.IO
 Imports System.Drawing
 Imports System.Drawing.Imaging
+Imports System.IO
 Imports Autodesk.AutoCAD.ApplicationServices
 Imports Autodesk.AutoCAD.DatabaseServices
 Imports Autodesk.AutoCAD.EditorInput
@@ -342,10 +342,10 @@ Public Class TestCommands
                 Return
             End If
 
-            ' 1:100 固定比例：模型空间视图高度应等于图框高度 29700（±1）
-            ' 视口纸面宽度参考值 420mm（纸张单位为毫米时）
+            ' 1:100 固定比例：模型空间视图高度应等于图框高度 29700（±1）——与是否旋转内容无关
+            ' 视口纸面宽：横向纸面=420；纵向纸面+内容旋转90°=297
             Dim heightOk = Math.Abs(viewH - 29700) <= 1
-            Dim widthInfo = $"视口宽={viewW:F1}（参考420，取决于纸张单位）"
+            Dim widthInfo = $"视口宽={viewW:F1}（横向纸=420 / 纵向纸+旋转=297）"
             If heightOk Then
                 Pass(name, $"ViewHeight={viewH:F1}（期望29700±1）；{widthInfo}；纸张={paper}")
             Else

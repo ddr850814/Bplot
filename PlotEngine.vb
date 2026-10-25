@@ -1,5 +1,4 @@
 Imports System.IO
-Imports System.Linq
 Imports System.Text
 Imports Autodesk.AutoCAD.ApplicationServices
 Imports Autodesk.AutoCAD.DatabaseServices
@@ -1150,7 +1149,7 @@ Public Class BatchPlotEngine
         Try
             If IsExternalPlotMode OrElse _doc Is Nothing Then Return wcsArea
             ' 图纸空间 DCS=WCS，无视图旋转
-            If Not _doc.Database.TILEMODE Then Return wcsArea
+            If Not _doc.Database.TileMode Then Return wcsArea
 
             Dim view As ViewTableRecord = _doc.Editor.GetCurrentView()
             ' 视图无扭转：保持既有 WCS 坐标行为，零回归风险
@@ -1294,48 +1293,48 @@ Public Class BatchPlotEngine
                         pi.Layout = layoutId
                         pi.OverrideSettings = ps
 
-                    ' 验证打印信息
-                    Using piv As New PlotInfoValidator()
-                        piv.MediaMatchingPolicy = MatchingPolicy.MatchEnabled
-                        Try
-                            piv.Validate(pi)
-                        Catch ex As Exception
-                            _logger.Warning($"PlotInfo验证警告: {ex.Message}")
-                        End Try
-                    End Using
+                        ' 验证打印信息
+                        Using piv As New PlotInfoValidator()
+                            piv.MediaMatchingPolicy = MatchingPolicy.MatchEnabled
+                            Try
+                                piv.Validate(pi)
+                            Catch ex As Exception
+                                _logger.Warning($"PlotInfo验证警告: {ex.Message}")
+                            End Try
+                        End Using
 
-                    ' 执行预览 - 在事务内执行（异常时逐级清理引擎状态）
-                    Using pe As PlotEngine = PlotFactory.CreatePreviewEngine(CInt(PreviewEngineFlags.Plot))
-                        Dim plotStarted As Boolean = False
-                        Dim documentStarted As Boolean = False
-                        Dim pageStarted As Boolean = False
-                        Dim graphicsStarted As Boolean = False
-                        Try
-                            pe.BeginPlot(Nothing, Nothing)
-                            plotStarted = True
-                            pe.BeginDocument(pi, layoutName, Nothing, 1, False, Nothing)
-                            documentStarted = True
-                            Dim pageInfo As New PlotPageInfo()
-                            pe.BeginPage(pageInfo, pi, True, Nothing)
-                            pageStarted = True
-                            pe.BeginGenerateGraphics(Nothing)
-                            graphicsStarted = True
-                            pe.EndGenerateGraphics(Nothing)
-                            graphicsStarted = False
-                            pe.EndPage(Nothing)
-                            pageStarted = False
-                            pe.EndDocument(Nothing)
-                            documentStarted = False
-                            pe.EndPlot(Nothing)
-                            plotStarted = False
-                        Finally
-                            ' 与 RunPlotEngineSafely 相同的级联收尾，防止异常残留引擎状态
-                            If graphicsStarted Then Try : pe.EndGenerateGraphics(Nothing) : Catch : End Try
-                            If pageStarted Then Try : pe.EndPage(Nothing) : Catch : End Try
-                            If documentStarted Then Try : pe.EndDocument(Nothing) : Catch : End Try
-                            If plotStarted Then Try : pe.EndPlot(Nothing) : Catch : End Try
-                        End Try
-                    End Using
+                        ' 执行预览 - 在事务内执行（异常时逐级清理引擎状态）
+                        Using pe As PlotEngine = PlotFactory.CreatePreviewEngine(CInt(PreviewEngineFlags.Plot))
+                            Dim plotStarted As Boolean = False
+                            Dim documentStarted As Boolean = False
+                            Dim pageStarted As Boolean = False
+                            Dim graphicsStarted As Boolean = False
+                            Try
+                                pe.BeginPlot(Nothing, Nothing)
+                                plotStarted = True
+                                pe.BeginDocument(pi, layoutName, Nothing, 1, False, Nothing)
+                                documentStarted = True
+                                Dim pageInfo As New PlotPageInfo()
+                                pe.BeginPage(pageInfo, pi, True, Nothing)
+                                pageStarted = True
+                                pe.BeginGenerateGraphics(Nothing)
+                                graphicsStarted = True
+                                pe.EndGenerateGraphics(Nothing)
+                                graphicsStarted = False
+                                pe.EndPage(Nothing)
+                                pageStarted = False
+                                pe.EndDocument(Nothing)
+                                documentStarted = False
+                                pe.EndPlot(Nothing)
+                                plotStarted = False
+                            Finally
+                                ' 与 RunPlotEngineSafely 相同的级联收尾，防止异常残留引擎状态
+                                If graphicsStarted Then Try : pe.EndGenerateGraphics(Nothing) : Catch : End Try
+                                If pageStarted Then Try : pe.EndPage(Nothing) : Catch : End Try
+                                If documentStarted Then Try : pe.EndDocument(Nothing) : Catch : End Try
+                                If plotStarted Then Try : pe.EndPlot(Nothing) : Catch : End Try
+                            End Try
+                        End Using
 
                         tr.Commit()
                     Finally
@@ -1925,13 +1924,13 @@ Public Class BatchPlotEngine
                     Using tr As Transaction = _db.TransactionManager.StartTransaction()
                         If Not createdLayoutId.IsNull Then
                             Dim layout = CType(tr.GetObject(createdLayoutId, OpenMode.ForWrite), Layout)
-                            
+
                             ' 先应用打印设置（确保纸张尺寸正确）
                             ApplyPlotSettingsToLayout(layout, settings, tr, frame)
-                            
+
                             ' 再删除布局中的默认视口
                             DeleteDefaultViewports(tr, layout)
-                            
+
                             ' 最后创建视口（此时纸张尺寸已正确）
                             If modelSpaceScale Then
                                 CreateViewportForLayout(tr, layout, frame, settings)
@@ -2100,67 +2099,59 @@ Public Class BatchPlotEngine
     Private Sub CreateViewportForLayout(tr As Transaction, layout As Layout, frame As FrameInfo, settings As PlotSettings)
         Dim layoutBtr = CType(tr.GetObject(layout.BlockTableRecordId, OpenMode.ForWrite), BlockTableRecord)
 
-        ' 从 layout.PlotPaperSize 获取实际的纸张尺寸（应用打印设置后）
-        Dim paperWidth As Double = A4_WIDTH
-        Dim paperHeight As Double = A4_HEIGHT
-        
+        ' 获取纸张规格（毫米）：只取短边/长边，不依赖读数的宽高顺序——
+        ' Layout.PlotPaperSize 对同一纸张在不同 CAD 版本返回顺序可能不同（是否已应用 PlotRotation）
+        Dim shortSide As Double = 210.0
+        Dim longSide As Double = 297.0
         Try
-            ' 使用 layout.PlotPaperSize 获取实际纸张尺寸
-            Dim vpPaperSize As Point2d = layout.PlotPaperSize
-            paperWidth = vpPaperSize.X
-            paperHeight = vpPaperSize.Y
+            Dim rawSize As Point2d = layout.PlotPaperSize
+            shortSide = Math.Min(rawSize.X, rawSize.Y)
+            longSide = Math.Max(rawSize.X, rawSize.Y)
         Catch ex As Exception
             Try
                 If Not String.IsNullOrEmpty(settings.PaperSize) Then
+                    Dim w As Double = 0, h As Double = 0
                     Dim match As RegularExpressions.Match = RegularExpressions.Regex.Match(settings.PaperSize, "(\d+\.?\d*)\s*x\s*(\d+\.?\d*)")
                     If match.Success Then
-                        paperWidth = Double.Parse(match.Groups(1).Value)
-                        paperHeight = Double.Parse(match.Groups(2).Value)
+                        w = Double.Parse(match.Groups(1).Value)
+                        h = Double.Parse(match.Groups(2).Value)
                     Else
                         Dim paperSizeKey As String = settings.PaperSize.ToUpper().Replace("ISO_", "").Replace(" ", "")
                         Select Case paperSizeKey
-                            Case "A0" : paperWidth = 841.0 : paperHeight = 1189.0
-                            Case "A1" : paperWidth = 594.0 : paperHeight = 841.0
-                            Case "A2" : paperWidth = 420.0 : paperHeight = 594.0
-                            Case "A3" : paperWidth = 297.0 : paperHeight = 420.0
-                            Case "A4" : paperWidth = 210.0 : paperHeight = 297.0
-                            Case "A5" : paperWidth = 148.0 : paperHeight = 210.0
-                            Case "B4" : paperWidth = 250.0 : paperHeight = 353.0
-                            Case "B5" : paperWidth = 176.0 : paperHeight = 250.0
+                            Case "A0" : w = 841.0 : h = 1189.0
+                            Case "A1" : w = 594.0 : h = 841.0
+                            Case "A2" : w = 420.0 : h = 594.0
+                            Case "A3" : w = 297.0 : h = 420.0
+                            Case "A4" : w = 210.0 : h = 297.0
+                            Case "A5" : w = 148.0 : h = 210.0
+                            Case "B4" : w = 250.0 : h = 353.0
+                            Case "B5" : w = 176.0 : h = 250.0
                         End Select
+                    End If
+                    If w > 0 AndAlso h > 0 Then
+                        shortSide = Math.Min(w, h)
+                        longSide = Math.Max(w, h)
                     End If
                 End If
             Catch ex2 As Exception
             End Try
         End Try
-        
-        ' 从 layout 获取纸张方向
-        Dim isLandscape As Boolean = False
-        Try
-            Dim rotation As Integer = CInt(layout.PlotRotation)
-            isLandscape = (rotation = 1 OrElse rotation = 3)
-        Catch ex As Exception
-            isLandscape = settings.IsLandscape
-        End Try
-        
-        ' 自动旋转：比较图框宽高比和纸张宽高比
+
+        ' 纸面方向由设置决定，与 ApplyPlotSettingsToLayout 设置的 PlotRotation 保持一致
+        ' （IsLandscape=True → PlotRotation 90° → 横向纸面：宽=长边）
+        Dim isLandscape As Boolean = settings.IsLandscape
+        Dim paperWidth As Double = If(isLandscape, longSide, shortSide)
+        Dim paperHeight As Double = If(isLandscape, shortSide, longSide)
+
+        ' 自动旋转：图框方向与纸面方向不一致时旋转视口内容 90 度
         Dim needTwist As Boolean = False
         If settings.AutoRotate Then
             Dim frameW As Double = frame.Bounds.MaxPoint.X - frame.Bounds.MinPoint.X
             Dim frameH As Double = frame.Bounds.MaxPoint.Y - frame.Bounds.MinPoint.Y
             Dim frameIsLandscape As Boolean = frameW > frameH
-            Dim rawPaperSize As Point2d = layout.PlotPaperSize
-            Dim paperIsLandscape As Boolean = rawPaperSize.X > rawPaperSize.Y
-            If frameIsLandscape <> paperIsLandscape Then
+            If frameIsLandscape <> isLandscape Then
                 needTwist = True
             End If
-        End If
-        
-        ' 如果横向，交换纸张尺寸
-        If isLandscape Then
-            Dim temp As Double = paperWidth
-            paperWidth = paperHeight
-            paperHeight = temp
         End If
 
         Dim frameWidth As Double = frame.Bounds.MaxPoint.X - frame.Bounds.MinPoint.X
@@ -2210,7 +2201,7 @@ Public Class BatchPlotEngine
         End Select
 
         Dim viewportUnitFactor = 1.0
-        
+
         ' 根据主窗口设置计算视口比例
         ' needScale = 打印比例（图纸空间单位 / 模型空间单位）
         ' 例如 1:100 时 needScale = 0.01，表示模型空间 100 单位对应图纸空间 1 单位
@@ -2233,10 +2224,10 @@ Public Class BatchPlotEngine
             End If
         Catch
         End Try
-        
+
         Dim marginMin As Point2d = layout.PlotPaperMargins.MinPoint
         Dim marginMax As Point2d = layout.PlotPaperMargins.MaxPoint
-        
+
         ' 如果横向，页边距的 XY 也需要互换
         ' 纵向时：左边距=marginMin.X, 下边距=marginMin.Y
         ' 横向时（旋转90/270度）：原来的上下边距变成左右边距
@@ -2244,31 +2235,31 @@ Public Class BatchPlotEngine
         Dim marginBottom As Double = marginMin.Y
         Dim marginRight As Double = marginMax.X
         Dim marginTop As Double = marginMax.Y
-        
+
         If isLandscape Then
             marginLeft = marginMin.Y
             marginBottom = marginMin.X
             marginRight = marginMax.Y
             marginTop = marginMax.X
         End If
-        
+
         ' 计算可打印区域（纸张尺寸减去页边距）
         ' paperWidth 和 paperHeight 是毫米值（已考虑方向）
         Dim printableWidth As Double = paperWidth - marginLeft - marginRight
         Dim printableHeight As Double = paperHeight - marginBottom - marginTop
-        
+
         Dim printableCenterX_mm As Double = marginLeft + printableWidth / 2
         Dim printableCenterY_mm As Double = marginBottom + printableHeight / 2
-        
+
         ' 视口大小计算
         Dim viewportWidth As Double
         Dim viewportHeight As Double
         Dim viewHeight As Double ' 模型空间视图高度（控制缩放级别）
-        
+
         ' 安全保护：确保单位转换因子不为零
         If unitFactor = 0 Then unitFactor = 1.0
         If paperUnitFactor = 0 Then paperUnitFactor = 1.0
-        
+
         If needScale = 0 Then
             ' 布满图纸：视口铺满可打印区域
             viewportWidth = Math.Max(printableWidth / paperUnitFactor, 1.0)
@@ -2288,14 +2279,16 @@ Public Class BatchPlotEngine
         End If
 
         If needTwist Then
-            ' 旋转 90 度：图框宽高互换后仍需完整可见，按视口宽高比重算视图高度
-            viewHeight = Math.Max(frameWidth, frameHeight * viewportHeight / Math.Max(viewportWidth, 0.001))
-            viewHeight = Math.Max(viewHeight, 1.0)
+            ' 内容旋转 90 度：视口纸面宽高互换以容纳旋转后的图框。
+            ' ViewHeight 不变（旋转只改变内容在纸面上的摆向，不改变要显示的模型范围）
+            Dim tempVp As Double = viewportWidth
+            viewportWidth = viewportHeight
+            viewportHeight = tempVp
         End If
-        
+
         Dim viewportCenterX As Double = (printableWidth / 2) / paperUnitFactor
         Dim viewportCenterY As Double = (printableHeight / 2) / paperUnitFactor
-        
+
         If Not settings.AutoCenter Then
             viewportCenterX += settings.OffsetX / paperUnitFactor
             viewportCenterY += settings.OffsetY / paperUnitFactor
@@ -2304,26 +2297,26 @@ Public Class BatchPlotEngine
         ' 创建视口
         Try
             Dim viewport As New Viewport()
-            
+
             ' 设置基本几何属性（添加前）
             viewport.CenterPoint = New Point3d(viewportCenterX, viewportCenterY, 0)
             viewport.Width = viewportWidth
             viewport.Height = viewportHeight
             viewport.ViewDirection = Vector3d.ZAxis
-            
+
             ' 添加到数据库
             layoutBtr.AppendEntity(viewport)
             tr.AddNewlyCreatedDBObject(viewport, True)
-            
+
             ' 获取写权限
             viewport.UpgradeOpen()
-            
+
             ' 关闭视口显示，设置视图属性
             viewport.On = False
-            
+
             ' 设置 ViewCenter（模型空间视图中心）- 应该是图框中心，不是视口中心
             viewport.ViewCenter = New Point2d(frameCenterX, frameCenterY)
-            
+
             ' 自动旋转：旋转视口中的图形来匹配纸张方向
             If needTwist Then
                 viewport.TwistAngle = Math.PI / 2
@@ -2332,16 +2325,16 @@ Public Class BatchPlotEngine
                 Dim newCenterY As Double = frameCenterX * Math.Sin(angle) + frameCenterY * Math.Cos(angle)
                 viewport.ViewCenter = New Point2d(newCenterX, newCenterY)
             End If
-            
+
             ' 设置模型空间视图属性（ViewHeight 控制缩放级别）
             viewport.ViewHeight = viewHeight
-            
+
             ' 启用视口显示
             viewport.On = True
-            
+
             ' 再次设置 CenterPoint（确保位置正确）
             viewport.CenterPoint = New Point3d(viewportCenterX, viewportCenterY, 0)
-            
+
             ' 更新显示
             viewport.UpdateDisplay()
 
@@ -2358,7 +2351,7 @@ Public Class BatchPlotEngine
         Try
             Dim layoutBtr = CType(tr.GetObject(layout.BlockTableRecordId, OpenMode.ForWrite), BlockTableRecord)
             Dim viewportsToDelete As New List(Of ObjectId)
-            
+
             ' 遍历布局中的所有实体，查找视口
             For Each entityId As ObjectId In layoutBtr
                 If Not entityId.IsNull Then
@@ -2369,14 +2362,14 @@ Public Class BatchPlotEngine
                     End If
                 End If
             Next
-            
+
             ' 删除找到的视口
             For Each viewportId As ObjectId In viewportsToDelete
                 Dim viewport As Viewport = CType(tr.GetObject(viewportId, OpenMode.ForWrite), Viewport)
                 viewport.Erase()
                 _logger.Info($"已删除默认视口: {viewportId.Handle}")
             Next
-            
+
             If viewportsToDelete.Count = 0 Then
                 _logger.Info("布局中没有默认视口")
             End If
@@ -2499,75 +2492,75 @@ Public Class BatchPlotEngine
                     Try
                         ps.CopyFrom(layout)
 
-                    ' 仅在用户明确指定时才覆盖布局设置
-                    Dim psv As PlotSettingsValidator = PlotSettingsValidator.Current
+                        ' 仅在用户明确指定时才覆盖布局设置
+                        Dim psv As PlotSettingsValidator = PlotSettingsValidator.Current
 
-                    ' 应用打印机设置（如果用户指定了且与布局不同）
-                    If Not String.IsNullOrEmpty(settings.PlotterName) AndAlso settings.PlotterName <> layout.PlotConfigurationName Then
-                        Try
-                            psv.SetPlotConfigurationName(ps, settings.PlotterName, Nothing)
-                            _logger.Info($"覆盖布局打印机: {layout.PlotConfigurationName} -> {settings.PlotterName}")
-                        Catch ex As Exception
-                            _logger.Warning($"设置打印机失败，使用布局原有设置: {ex.Message}")
-                        End Try
-                    End If
+                        ' 应用打印机设置（如果用户指定了且与布局不同）
+                        If Not String.IsNullOrEmpty(settings.PlotterName) AndAlso settings.PlotterName <> layout.PlotConfigurationName Then
+                            Try
+                                psv.SetPlotConfigurationName(ps, settings.PlotterName, Nothing)
+                                _logger.Info($"覆盖布局打印机: {layout.PlotConfigurationName} -> {settings.PlotterName}")
+                            Catch ex As Exception
+                                _logger.Warning($"设置打印机失败，使用布局原有设置: {ex.Message}")
+                            End Try
+                        End If
 
-                    ' 应用纸张设置（如果用户指定了）
-                    If Not String.IsNullOrEmpty(settings.PaperSize) Then
-                        Try
-                            Dim canonicalName As String = ResolveMediaName(ps, settings.PaperSize)
-                            If canonicalName <> layout.CanonicalMediaName Then
-                                psv.SetPlotConfigurationName(ps, ps.PlotConfigurationName, canonicalName)
-                                psv.RefreshLists(ps)
-                                _logger.Info($"覆盖布局纸张: {layout.CanonicalMediaName} -> {canonicalName}")
-                            End If
-                        Catch ex As Exception
-                            _logger.Warning($"设置纸张失败，使用布局原有设置: {ex.Message}")
-                        End Try
-                    End If
+                        ' 应用纸张设置（如果用户指定了）
+                        If Not String.IsNullOrEmpty(settings.PaperSize) Then
+                            Try
+                                Dim canonicalName As String = ResolveMediaName(ps, settings.PaperSize)
+                                If canonicalName <> layout.CanonicalMediaName Then
+                                    psv.SetPlotConfigurationName(ps, ps.PlotConfigurationName, canonicalName)
+                                    psv.RefreshLists(ps)
+                                    _logger.Info($"覆盖布局纸张: {layout.CanonicalMediaName} -> {canonicalName}")
+                                End If
+                            Catch ex As Exception
+                                _logger.Warning($"设置纸张失败，使用布局原有设置: {ex.Message}")
+                            End Try
+                        End If
 
-                    ' 应用打印样式（如果用户指定了且与布局不同）
-                    If Not String.IsNullOrEmpty(settings.PlotStyle) AndAlso settings.PlotStyle <> "无" AndAlso settings.PlotStyle <> layout.CurrentStyleSheet Then
-                        Try
-                            ' 命名打印样式(STB)图纸只能用 .stb 样式，不兼容时跳过并警告
-                            Dim styleName As String = settings.PlotStyle
-                            If _db.PlotStyleMode AndAlso Not styleName.EndsWith(".stb", StringComparison.OrdinalIgnoreCase) Then
-                                _logger.Warning($"打印样式 '{styleName}' 与图纸模式不兼容（命名打印样式图纸需 .stb），保留布局原样式")
-                            Else
-                                psv.SetCurrentStyleSheet(ps, styleName)
-                                ' 显式启用打印样式应用，防止布局原值为关闭导致样式不生效
-                                ps.PlotPlotStyles = True
-                                _logger.Info($"覆盖布局打印样式: {layout.CurrentStyleSheet} -> {styleName}")
-                            End If
-                        Catch ex As Exception
-                            _logger.Warning($"设置打印样式失败，使用布局原有设置: {ex.Message}")
-                        End Try
-                    End If
+                        ' 应用打印样式（如果用户指定了且与布局不同）
+                        If Not String.IsNullOrEmpty(settings.PlotStyle) AndAlso settings.PlotStyle <> "无" AndAlso settings.PlotStyle <> layout.CurrentStyleSheet Then
+                            Try
+                                ' 命名打印样式(STB)图纸只能用 .stb 样式，不兼容时跳过并警告
+                                Dim styleName As String = settings.PlotStyle
+                                If _db.PlotStyleMode AndAlso Not styleName.EndsWith(".stb", StringComparison.OrdinalIgnoreCase) Then
+                                    _logger.Warning($"打印样式 '{styleName}' 与图纸模式不兼容（命名打印样式图纸需 .stb），保留布局原样式")
+                                Else
+                                    psv.SetCurrentStyleSheet(ps, styleName)
+                                    ' 显式启用打印样式应用，防止布局原值为关闭导致样式不生效
+                                    ps.PlotPlotStyles = True
+                                    _logger.Info($"覆盖布局打印样式: {layout.CurrentStyleSheet} -> {styleName}")
+                                End If
+                            Catch ex As Exception
+                                _logger.Warning($"设置打印样式失败，使用布局原有设置: {ex.Message}")
+                            End Try
+                        End If
 
-                    ' 应用打印比例（仅当用户选择FitToPaper时）
-                    If settings.PlotScale = PlotScaleType.FitToPaper Then
-                        psv.SetUseStandardScale(ps, True)
-                        psv.SetStdScaleType(ps, StdScaleType.ScaleToFit)
-                        _logger.Info("应用FitToPaper打印比例")
-                    End If
+                        ' 应用打印比例（仅当用户选择FitToPaper时）
+                        If settings.PlotScale = PlotScaleType.FitToPaper Then
+                            psv.SetUseStandardScale(ps, True)
+                            psv.SetStdScaleType(ps, StdScaleType.ScaleToFit)
+                            _logger.Info("应用FitToPaper打印比例")
+                        End If
 
-                    ' 创建PlotInfo
-                    pi = New PlotInfo()
-                    pi.Layout = layoutId
-                    pi.OverrideSettings = ps
+                        ' 创建PlotInfo
+                        pi = New PlotInfo()
+                        pi.Layout = layoutId
+                        pi.OverrideSettings = ps
 
-                    ' 验证
-                    Using piv As New PlotInfoValidator()
-                        piv.MediaMatchingPolicy = MatchingPolicy.MatchEnabled
-                        Try
-                            piv.Validate(pi)
-                        Catch ex As Exception
-                            _logger.Warning($"PlotInfo验证警告: {ex.Message}")
-                        End Try
-                    End Using
+                        ' 验证
+                        Using piv As New PlotInfoValidator()
+                            piv.MediaMatchingPolicy = MatchingPolicy.MatchEnabled
+                            Try
+                                piv.Validate(pi)
+                            Catch ex As Exception
+                                _logger.Warning($"PlotInfo验证警告: {ex.Message}")
+                            End Try
+                        End Using
 
-                    ' 执行打印（异常时自动逐级清理引擎状态）
-                    RunPlotEngineSafely(pi, layoutName, Nothing)
+                        ' 执行打印（异常时自动逐级清理引擎状态）
+                        RunPlotEngineSafely(pi, layoutName, Nothing)
 
                         tr.Commit()
                     Finally
@@ -3442,98 +3435,98 @@ Public Class BatchPlotEngine
                                 ps.CopyFrom(layout)
                                 ConfigurePlotSettings(ps, frame, settings)
 
-                            ' 最后将打印机替换为 PNG 输出（覆盖用户选择的打印机）
-                            Dim psv As PlotSettingsValidator = PlotSettingsValidator.Current
-                            Try
-                                psv.SetPlotConfigurationName(ps, pngPlotter, Nothing)
-                                psv.RefreshLists(ps)
-                                ' 栅格设备纸张单位必须用像素
-                                psv.SetPlotPaperUnits(ps, PlotPaperUnit.Pixels)
-                            Catch ex As Exception
-                                _logger.Warning($"设置PNG打印机失败: {ex.Message}")
-                            End Try
+                                ' 最后将打印机替换为 PNG 输出（覆盖用户选择的打印机）
+                                Dim psv As PlotSettingsValidator = PlotSettingsValidator.Current
+                                Try
+                                    psv.SetPlotConfigurationName(ps, pngPlotter, Nothing)
+                                    psv.RefreshLists(ps)
+                                    ' 栅格设备纸张单位必须用像素
+                                    psv.SetPlotPaperUnits(ps, PlotPaperUnit.Pixels)
+                                Catch ex As Exception
+                                    _logger.Warning($"设置PNG打印机失败: {ex.Message}")
+                                End Try
 
-                            ' 重新设置窗口区域（SetPlotConfigurationName 可能重置）
-                            Try
-                                psv.SetPlotType(ps, Autodesk.AutoCAD.DatabaseServices.PlotType.Window)
-                                Dim windowArea As New Extents2d(frame.Bounds.MinPoint.X, frame.Bounds.MinPoint.Y, frame.Bounds.MaxPoint.X, frame.Bounds.MaxPoint.Y)
-                                psv.SetPlotWindowArea(ps, windowArea)
-                            Catch : End Try
+                                ' 重新设置窗口区域（SetPlotConfigurationName 可能重置）
+                                Try
+                                    psv.SetPlotType(ps, Autodesk.AutoCAD.DatabaseServices.PlotType.Window)
+                                    Dim windowArea As New Extents2d(frame.Bounds.MinPoint.X, frame.Bounds.MinPoint.Y, frame.Bounds.MaxPoint.X, frame.Bounds.MaxPoint.Y)
+                                    psv.SetPlotWindowArea(ps, windowArea)
+                                Catch : End Try
 
-                            ' 重新设置打印比例（SetPlotConfigurationName 会重置比例）
-                            ' 注意：PNG 打印机的纸张尺寸与用户选择的纸张不同，AutoScale 需要基于用户纸张尺寸计算
-                            Try
-                                If settings.PlotScale = PlotScaleType.AutoScale Then
-                                    ' 使用用户选择的纸张尺寸计算自动取整比例
-                                    Dim paperSize = ParsePaperSize(settings.PaperSize)
-                                    Dim pw As Double = paperSize.Item1
-                                    Dim ph As Double = paperSize.Item2
-                                    Dim frameWidth As Double = Math.Abs(frame.Bounds.MaxPoint.X - frame.Bounds.MinPoint.X)
-                                    Dim frameHeight As Double = Math.Abs(frame.Bounds.MaxPoint.Y - frame.Bounds.MinPoint.Y)
-                                    Dim isLandscape As Boolean = If(settings.AutoRotate, frameWidth > frameHeight, settings.IsLandscape)
-                                    Dim bestScaleIndex = CalculateBestScale(pw, ph, frameWidth, frameHeight, isLandscape)
+                                ' 重新设置打印比例（SetPlotConfigurationName 会重置比例）
+                                ' 注意：PNG 打印机的纸张尺寸与用户选择的纸张不同，AutoScale 需要基于用户纸张尺寸计算
+                                Try
+                                    If settings.PlotScale = PlotScaleType.AutoScale Then
+                                        ' 使用用户选择的纸张尺寸计算自动取整比例
+                                        Dim paperSize = ParsePaperSize(settings.PaperSize)
+                                        Dim pw As Double = paperSize.Item1
+                                        Dim ph As Double = paperSize.Item2
+                                        Dim frameWidth As Double = Math.Abs(frame.Bounds.MaxPoint.X - frame.Bounds.MinPoint.X)
+                                        Dim frameHeight As Double = Math.Abs(frame.Bounds.MaxPoint.Y - frame.Bounds.MinPoint.Y)
+                                        Dim isLandscape As Boolean = If(settings.AutoRotate, frameWidth > frameHeight, settings.IsLandscape)
+                                        Dim bestScaleIndex = CalculateBestScale(pw, ph, frameWidth, frameHeight, isLandscape)
 
-                                    If bestScaleIndex >= 0 Then
-                                        If IsPixelPaperUnits(ps) Then
-                                            ' 栅格设备（Pixels）不用标准比例：毫米比例按 DPI 换算成像素分子
-                                            psv.SetUseStandardScale(ps, False)
-                                            Dim pixelScale = New CustomScale(ToPlotPaperUnitScale(ps, _standardScaleRatios(bestScaleIndex)), 1.0)
-                                            psv.SetCustomPrintScale(ps, pixelScale)
-                                        Else
-                                            ' 优先使用真实存在的标准比例枚举；无枚举的比例直接自定义比例
-                                            Dim stdScaleTypeName As String = "StdScale" & _standardScaleNames(bestScaleIndex).Replace(":", "To")
-                                            Dim stdScaleEnum As StdScaleType
-                                            If [Enum].TryParse(Of StdScaleType)(stdScaleTypeName, True, stdScaleEnum) Then
-                                                psv.SetUseStandardScale(ps, True)
-                                                psv.SetStdScaleType(ps, stdScaleEnum)
-                                            Else
+                                        If bestScaleIndex >= 0 Then
+                                            If IsPixelPaperUnits(ps) Then
+                                                ' 栅格设备（Pixels）不用标准比例：毫米比例按 DPI 换算成像素分子
                                                 psv.SetUseStandardScale(ps, False)
-                                                Dim scale = New CustomScale(ToPlotPaperUnitScale(ps, _standardScaleRatios(bestScaleIndex)), 1.0)
-                                                psv.SetCustomPrintScale(ps, scale)
+                                                Dim pixelScale = New CustomScale(ToPlotPaperUnitScale(ps, _standardScaleRatios(bestScaleIndex)), 1.0)
+                                                psv.SetCustomPrintScale(ps, pixelScale)
+                                            Else
+                                                ' 优先使用真实存在的标准比例枚举；无枚举的比例直接自定义比例
+                                                Dim stdScaleTypeName As String = "StdScale" & _standardScaleNames(bestScaleIndex).Replace(":", "To")
+                                                Dim stdScaleEnum As StdScaleType
+                                                If [Enum].TryParse(Of StdScaleType)(stdScaleTypeName, True, stdScaleEnum) Then
+                                                    psv.SetUseStandardScale(ps, True)
+                                                    psv.SetStdScaleType(ps, stdScaleEnum)
+                                                Else
+                                                    psv.SetUseStandardScale(ps, False)
+                                                    Dim scale = New CustomScale(ToPlotPaperUnitScale(ps, _standardScaleRatios(bestScaleIndex)), 1.0)
+                                                    psv.SetCustomPrintScale(ps, scale)
+                                                End If
                                             End If
+                                        Else
+                                            psv.SetUseStandardScale(ps, True)
+                                            psv.SetStdScaleType(ps, StdScaleType.ScaleToFit)
                                         End If
                                     Else
-                                        psv.SetUseStandardScale(ps, True)
-                                        psv.SetStdScaleType(ps, StdScaleType.ScaleToFit)
+                                        SetPlotScale(ps, frame, settings)
                                     End If
-                                Else
-                                    SetPlotScale(ps, frame, settings)
-                                End If
-                            Catch : End Try
+                                Catch : End Try
 
-                            ' 重新设置旋转（SetPlotConfigurationName 会重置旋转）
-                            Try
-                                SetPlotRotation(ps, frame, settings)
-                            Catch : End Try
-
-                            ' 重新设置居中/偏移
-                            Try
-                                If settings.AutoCenter Then
-                                    ' 可能带入旧原点，先清零再居中
-                                    psv.SetPlotCentered(ps, False)
-                                    psv.SetPlotOrigin(ps, New Point2d(0, 0))
-                                    psv.SetPlotCentered(ps, True)
-                                Else
-                                    psv.SetPlotCentered(ps, False)
-                                    psv.SetPlotOrigin(ps, New Point2d(settings.OffsetX, settings.OffsetY))
-                                End If
-                            Catch : End Try
-
-                            pi = New PlotInfo()
-                            pi.Layout = layoutId
-                            pi.OverrideSettings = ps
-
-                            Using piv As New PlotInfoValidator()
-                                piv.MediaMatchingPolicy = MatchingPolicy.MatchEnabled
+                                ' 重新设置旋转（SetPlotConfigurationName 会重置旋转）
                                 Try
-                                    piv.Validate(pi)
-                                Catch ex As Exception
-                                    _logger.Warning($"预览PlotInfo验证警告: {ex.Message}")
-                                End Try
-                            End Using
+                                    SetPlotRotation(ps, frame, settings)
+                                Catch : End Try
 
-                            ' 使用发布引擎打印到 PNG 文件（异常时自动逐级清理引擎状态）
-                            RunPlotEngineSafely(pi, layoutName, imgPath)
+                                ' 重新设置居中/偏移
+                                Try
+                                    If settings.AutoCenter Then
+                                        ' 可能带入旧原点，先清零再居中
+                                        psv.SetPlotCentered(ps, False)
+                                        psv.SetPlotOrigin(ps, New Point2d(0, 0))
+                                        psv.SetPlotCentered(ps, True)
+                                    Else
+                                        psv.SetPlotCentered(ps, False)
+                                        psv.SetPlotOrigin(ps, New Point2d(settings.OffsetX, settings.OffsetY))
+                                    End If
+                                Catch : End Try
+
+                                pi = New PlotInfo()
+                                pi.Layout = layoutId
+                                pi.OverrideSettings = ps
+
+                                Using piv As New PlotInfoValidator()
+                                    piv.MediaMatchingPolicy = MatchingPolicy.MatchEnabled
+                                    Try
+                                        piv.Validate(pi)
+                                    Catch ex As Exception
+                                        _logger.Warning($"预览PlotInfo验证警告: {ex.Message}")
+                                    End Try
+                                End Using
+
+                                ' 使用发布引擎打印到 PNG 文件（异常时自动逐级清理引擎状态）
+                                RunPlotEngineSafely(pi, layoutName, imgPath)
 
                                 tr.Commit()
                             Finally
