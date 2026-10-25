@@ -59,7 +59,12 @@ Public Class NameTemplateForm
                 Using tr As Transaction = doc.Database.TransactionManager.StartTransaction()
                     Dim br = CType(tr.GetObject(result.ObjectId, OpenMode.ForRead), BlockReference)
                     If br IsNot Nothing Then
-                        Dim btr = CType(tr.GetObject(br.BlockTableRecord, OpenMode.ForRead), BlockTableRecord)
+                        ' 动态块实例的 BlockTableRecord 指向匿名块 *U###，须取动态块定义名才能跨文档匹配
+                        Dim definitionId As ObjectId = br.BlockTableRecord
+                        If br.IsDynamicBlock AndAlso Not br.DynamicBlockTableRecord.IsNull Then
+                            definitionId = br.DynamicBlockTableRecord
+                        End If
+                        Dim btr = CType(tr.GetObject(definitionId, OpenMode.ForRead), BlockTableRecord)
                         blockName = btr.Name
 
                         For Each attrId As ObjectId In br.AttributeCollection
@@ -73,7 +78,8 @@ Public Class NameTemplateForm
                 End Using
 
                 If attrNames.Count > 0 Then
-                    Using selForm As New SelectionForm("选择属性", attrNames)
+                    ' 属性标签单选：一个模板占位符只对应一个属性，避免多选拼接出非法标签
+                    Using selForm As New SelectionForm("选择属性", attrNames, multiSelect:=False)
                         selForm.StartPosition = FormStartPosition.CenterScreen
                         If selForm.ShowDialog() = DialogResult.OK Then
                             _blockAttrResult = $"<BLOCKATTR:{blockName}:{selForm.SelectedItems}>"

@@ -138,6 +138,8 @@ Partial Public Class MainForm
     Private _plotEngine As BatchPlotEngine
     Private _frames As List(Of BatchPlotEngine.FrameInfo)
     Private _multiDocFiles As List(Of String)  ' 多文档打印选中的文件列表
+    Private _isPlotting As Boolean = False     ' 打印任务进行中标志：进度窗 DoEvents 期间防止主窗体按钮重入
+    Private _suppressPresetEvent As Boolean = False ' 刷新预设列表时抑制 SelectedIndexChanged 自动加载
     Private _useSingleDocStyle As Boolean = False  ' 是否使用单文档内部打印样式
     Private _overlay As FrameSequenceOverlay  ' 图框序号临时标注（打印前在图上核对数量与顺序）
     Private _overlayDoc As Document  ' 序号标注所属文档（切换文档时重建）
@@ -1207,7 +1209,7 @@ End Sub
             ' 隐藏NumericUpDown的上下箭头按钮
             ' 设置TextBox只能输入数字
             AddNumericValidation(txtCopies, False)
-            AddNumericValidation(txtScale, False)
+            AddNumericValidation(txtScale, True) ' 允许小数比例（如 0.5 表示 1:0.5）
             AddNumericValidation(txtOffsetX, True)
             AddNumericValidation(txtOffsetY, True)
 
@@ -1245,6 +1247,8 @@ End Sub
 
     ' 预配置下拉框选择事件 - 加载选中的预配置
     Private Sub CmbPreset_SelectedIndexChanged(sender As Object, e As EventArgs) Handles cmbPreset.SelectedIndexChanged
+        ' 刷新列表期间恢复选中项会触发本事件，避免误加载与误弹提示
+        If _suppressPresetEvent Then Return
         Try
             If cmbPreset.SelectedItem Is Nothing Then Return
 
@@ -1307,17 +1311,17 @@ End Sub
 
             ' 逐份打印
             If config.ContainsKey("Collate") Then
-                chkPlotByCopy.Checked = Boolean.Parse(config("Collate"))
+                chkPlotByCopy.Checked = SafeGetBool(config("Collate"), chkPlotByCopy.Checked)
             End If
 
             ' 自动旋转
             If config.ContainsKey("AutoRotate") Then
-                chkAutoRotate.Checked = Boolean.Parse(config("AutoRotate"))
+                chkAutoRotate.Checked = SafeGetBool(config("AutoRotate"), chkAutoRotate.Checked)
             End If
 
             ' 自动居中
             If config.ContainsKey("AutoCenter") Then
-                Dim autoCenter As Boolean = Boolean.Parse(config("AutoCenter"))
+                Dim autoCenter As Boolean = SafeGetBool(config("AutoCenter"), radAutoCenter.Checked)
                 radAutoCenter.Checked = autoCenter
                 radOffset.Checked = Not autoCenter
                 UpdateOffsetControls()
@@ -1387,6 +1391,10 @@ End Sub
             End If
 
             If _frames Is Nothing OrElse _frames.Count = 0 Then
+                ' 同步刷新界面计数与按钮状态，避免残留上次的"选中图纸: N"
+                lblSelectedCount.Text = "选中图纸: 0"
+                btnHighlight.Enabled = False
+                UpdatePreviewAndOKButtons()
                 Dim msg As String = "未识别到图框，请检查以下设置:" & vbCrLf & vbCrLf
                 If radBlock.Checked Then
                     msg &= "1. 图框形式: 图块" & vbCrLf & vbCrLf
@@ -1660,14 +1668,42 @@ End Sub
                     Dim styleMsg As String = If(_useSingleDocStyle, "（使用各文档内部打印样式）", "（使用主窗口打印样式设置）")
                     MessageBox.Show($"已选择 {_multiDocFiles.Count} 个文件，点击确定按钮开始多文档打印。{styleMsg}", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 End If
+                ' 已选多文档文件时无需先选图框，刷新确定/预览按钮可用状态
+                UpdatePreviewAndOKButtons()
             End If
         End Using
     End Sub
 
     Private Sub BtnPreview_Click(sender As Object, e As EventArgs) Handles btnPreview.Click
+        ' 打印/预览进行中禁止重入
+        If _isPlotting Then Return
         Try
+            ' 记录验证前的活动文档（验证过程可能在用户确认后切换文档）
+            Dim docBefore As Document = Nothing
+            Try
+                docBefore = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
+            Catch
+            End Try
+
             ' 验证当前文档
             If Not ValidateCurrentDocument() Then Return
+
+            ' 文档切换确认后旧图框 ObjectId 已失效（属于旧文档），必须重新检测
+            Dim docAfter As Document = Nothing
+            Try
+                docAfter = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
+            Catch
+            End Try
+            If docBefore IsNot Nothing AndAlso docAfter IsNot Nothing AndAlso
+               Not Object.ReferenceEquals(docBefore, docAfter) Then
+                _frames = New List(Of BatchPlotEngine.FrameInfo)()
+                ClearSequenceOverlay()
+                lblSelectedCount.Text = "选中图纸: 0"
+                btnHighlight.Enabled = False
+                UpdatePreviewAndOKButtons()
+                MessageBox.Show("文档已切换，请重新选择要处理的图纸", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
 
             If _frames Is Nothing OrElse _frames.Count = 0 Then
                 MessageBox.Show("请先选择要处理的图纸", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
@@ -1703,7 +1739,8 @@ End Sub
             ' 图纸定位
             settings.AutoRotate = chkAutoRotate.Checked
             settings.Reverse = chkReverse.Checked
-            settings.IsLandscape = True
+            ' 与实际打印路径一致（False）：旋转由引擎按图框/纸张方向判定，避免预览与出图方向相反
+            settings.IsLandscape = False
             settings.AutoCenter = radAutoCenter.Checked
             If Not radAutoCenter.Checked Then
                 settings.OffsetX = CDbl(Val(txtOffsetX.Text))
@@ -1751,6 +1788,7 @@ End Sub
             progressBar.Style = ProgressBarStyle.Continuous
             progressForm.Controls.Add(progressBar)
 
+            _isPlotting = True ' 预览渲染期间同样禁止重入
             progressForm.Show()
 
             ' 在主线程同步生成预览图片（AutoCAD API 要求主线程）
@@ -1799,12 +1837,14 @@ End Sub
             _plotEngine.CleanupPreviewImages()
             previewForm.Dispose()
 
+            _isPlotting = False
             Show()
             BringToFront()
             Activate()
 
         Catch ex As Exception
             MessageBox.Show("预览失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            _isPlotting = False
             Show()
         End Try
     End Sub
@@ -1819,11 +1859,15 @@ End Sub
     End Sub
 
     Private Sub BtnOK_Click(sender As Object, e As EventArgs) Handles btnOK.Click
+        ' 打印进行中禁止重入（进度窗 DoEvents 期间主窗体仍可收到点击）
+        If _isPlotting Then Return
         Try
             ' 检查是否有选中的多文档文件
             If _multiDocFiles IsNot Nothing AndAlso _multiDocFiles.Count > 0 Then
                 ' 多文档打印会切换文档，先清掉本文档图上的序号标注
                 ClearSequenceOverlay()
+                ' 多文档分支提前 Return，此处同样持久化本次使用的界面设置
+                SaveUIState()
                 ' 执行多文档打印
                 ExecuteMultiDocPlot()
                 Return
@@ -2084,10 +2128,23 @@ End Sub
         End If
     End Function
 
+    ' 容错布尔解析：坏值返回控件当前值，避免一个坏键中止后续全部恢复/应用
+    Private Shared Function SafeGetBool(value As String, defaultValue As Boolean) As Boolean
+        Dim b As Boolean
+        If Boolean.TryParse(value, b) Then Return b
+        Return defaultValue
+    End Function
+
     ' 显示打印进度小窗（带取消按钮），并重置取消标志；AutoCAD API 要求主线程同步执行
     Private Sub ShowPlotProgress(title As String)
         ClosePlotProgress()
         _plotEngine.CancellationPending = False
+        _isPlotting = True
+        ' 进度窗用 DoEvents 保持响应，必须禁用主窗体关键按钮防止重入两批打印
+        btnOK.Enabled = False
+        btnPreview.Enabled = False
+        btnApply.Enabled = False
+        btnMultiDoc.Enabled = False
         _plotProgressForm = New Form()
         _plotProgressForm.Text = title
         _plotProgressForm.Size = New Drawing.Size(420, 160)
@@ -2135,6 +2192,11 @@ End Sub
         _plotProgressForm = Nothing
         _plotProgressLabel = Nothing
         _plotProgressBar = Nothing
+        _isPlotting = False
+        ' 恢复主窗体按钮（预览/确定按当前状态重新计算）
+        btnApply.Enabled = True
+        btnMultiDoc.Enabled = True
+        UpdatePreviewAndOKButtons()
     End Sub
 
     ' 更新打印进度小窗并保持 UI 响应
@@ -2292,14 +2354,14 @@ End Sub
 
             ' 恢复图纸定位
             If state.ContainsKey("AutoRotate") Then
-                chkAutoRotate.Checked = Boolean.Parse(state("AutoRotate"))
+                chkAutoRotate.Checked = SafeGetBool(state("AutoRotate"), chkAutoRotate.Checked)
             End If
             If state.ContainsKey("Reverse") Then
-                chkReverse.Checked = Boolean.Parse(state("Reverse"))
+                chkReverse.Checked = SafeGetBool(state("Reverse"), chkReverse.Checked)
             End If
             If state.ContainsKey("AutoCenter") Then
-                radAutoCenter.Checked = Boolean.Parse(state("AutoCenter"))
-                radOffset.Checked = Not Boolean.Parse(state("AutoCenter"))
+                radAutoCenter.Checked = SafeGetBool(state("AutoCenter"), radAutoCenter.Checked)
+                radOffset.Checked = Not radAutoCenter.Checked
             End If
             If state.ContainsKey("OffsetX") Then
                 txtOffsetX.Text = state("OffsetX")
@@ -2320,15 +2382,15 @@ End Sub
                 End Select
             End If
             If state.ContainsKey("ReverseOrder") Then
-                chkReverseOrder.Checked = Boolean.Parse(state("ReverseOrder"))
+                chkReverseOrder.Checked = SafeGetBool(state("ReverseOrder"), chkReverseOrder.Checked)
             End If
             If state.ContainsKey("PlotByCopy") Then
-                chkPlotByCopy.Checked = Boolean.Parse(state("PlotByCopy"))
+                chkPlotByCopy.Checked = SafeGetBool(state("PlotByCopy"), chkPlotByCopy.Checked)
             End If
 
             ' 恢复打印戳记
             If state.ContainsKey("PlotStamp") Then
-                chkPlotStamp.Checked = Boolean.Parse(state("PlotStamp"))
+                chkPlotStamp.Checked = SafeGetBool(state("PlotStamp"), chkPlotStamp.Checked)
             End If
 
             ' 恢复文件/布局设置
@@ -2349,10 +2411,10 @@ End Sub
                 txtNameTemplate.Text = state("NameTemplate")
             End If
             If state.ContainsKey("UseDWGName") Then
-                chkUseDWGName.Checked = Boolean.Parse(state("UseDWGName"))
+                chkUseDWGName.Checked = SafeGetBool(state("UseDWGName"), chkUseDWGName.Checked)
             End If
             If state.ContainsKey("TraverseLayouts") Then
-                chkTraverseLayouts.Checked = Boolean.Parse(state("TraverseLayouts"))
+                chkTraverseLayouts.Checked = SafeGetBool(state("TraverseLayouts"), chkTraverseLayouts.Checked)
             End If
             If state.ContainsKey("DuplicateHandling") Then
                 If state("DuplicateHandling") = "Overwrite" Then
@@ -2372,10 +2434,10 @@ End Sub
                 txtLayerName.Text = state("LayerName")
             End If
             If state.ContainsKey("AutoSelect") Then
-                chkAutoSelect.Checked = Boolean.Parse(state("AutoSelect"))
+                chkAutoSelect.Checked = SafeGetBool(state("AutoSelect"), chkAutoSelect.Checked)
             End If
             If state.ContainsKey("ModelSpaceScale") Then
-                chkModelSpaceScale.Checked = Boolean.Parse(state("ModelSpaceScale"))
+                chkModelSpaceScale.Checked = SafeGetBool(state("ModelSpaceScale"), chkModelSpaceScale.Checked)
             End If
 
             ' 更新相关控件状态
@@ -2464,6 +2526,11 @@ End Sub
                 settings.OffsetY = CDbl(Val(txtOffsetY.Text))
             End If
 
+            ' 反向与打印戳记同样始终根据界面设置（此前仅在非单文档样式分支设置，
+            ' 勾选"使用单文档内部打印样式"时会静默丢失）
+            settings.Reverse = chkReverse.Checked
+            settings.PlotStamp = chkPlotStamp.Checked
+
             ' 重名文件处理：覆盖/自动顺延/跳过
             settings.DuplicateHandling = GetSelectedDuplicateHandling()
 
@@ -2482,6 +2549,9 @@ End Sub
             ' 遍历每个文件执行打印（整个过程共用一个进度窗，可在窗口中取消）
             Dim totalFiles As Integer = _multiDocFiles.Count
             Dim processedFiles As Integer = 0
+            ' 批量生成布局模式会切换活动文档，记录原活动文档以便结束后恢复
+            Dim originalActiveDoc As Document =
+                Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
             ShowPlotProgress("正在多文档打印...")
             For i = 0 To totalFiles - 1
                 ' 用户取消：当前文件打印完成后停止处理后续文件
@@ -2491,6 +2561,10 @@ End Sub
                 End If
                 Dim filePath As String = _multiDocFiles(i)
                 Dim fileName As String = Path.GetFileName(filePath)
+
+                ' 侧库模式不切换活动文档，输出路径必须按当前文件推导，
+                ' 否则所有文件的输出都会落到启动文档目录
+                settings.OutputPath = GetActualOutputPath(filePath)
 
                 ' 打印/打印到文件/已有布局/拆分归档走侧库（不在编辑器打开文档：无激活等待、不残留）；
                 ' 批量生成布局要修改文档本身，保留打开文档方式
@@ -2522,19 +2596,10 @@ End Sub
                     Dim blockName As String = txtBlockName.Text.Trim()
                     Dim layerName As String = txtLayerName.Text.Trim()
 
-                    ' 如果勾选自动选择，使用通配符匹配所有
-                    If chkAutoSelect.Checked Then
-                        blockName = "*"
-                        layerName = "*"
-                    Else
-                        ' 只有输入为空时才使用通配符，保留用户输入的默认值
-                        If String.IsNullOrEmpty(blockName) Then
-                            blockName = "*"
-                        End If
-                        If String.IsNullOrEmpty(layerName) Then
-                            layerName = "*"
-                        End If
-                    End If
+                    ' 图块模式不使用图层过滤（主窗体中该输入被禁用，残留旧值会误过滤导致漏检）
+                    If radBlock.Checked Then layerName = "*"
+                    If String.IsNullOrEmpty(blockName) Then blockName = "*"
+                    If String.IsNullOrEmpty(layerName) Then layerName = "*"
 
                     Dim frames As List(Of BatchPlotEngine.FrameInfo) = Nothing
                     If radBlock.Checked Then
@@ -2574,8 +2639,8 @@ End Sub
                             settings.DirectPrint = False
                             _plotEngine.ExecuteBatchPlot(frames, settings, progressCallback)
                         ElseIf radSplitArchive.Checked Then
-                            ' 图纸拆分归档
-                            Dim archivePath As String = GetActualOutputPath()
+                            ' 图纸拆分归档（路径同样按当前文件推导）
+                            Dim archivePath As String = GetActualOutputPath(filePath)
                             If String.IsNullOrEmpty(archivePath) Then
                                 archivePath = Path.GetDirectoryName(filePath)
                             End If
@@ -2606,11 +2671,21 @@ End Sub
 
             ClosePlotProgress()
 
+            ' 批量生成布局模式会打开并切换各文档，恢复原活动文档（生成的布局由用户自行保存）
+            If radBatchCreateLayout.Checked AndAlso originalActiveDoc IsNot Nothing Then
+                Try
+                    Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument = originalActiveDoc
+                Catch exRestore As Exception
+                    Logger.GetInstance().Warning($"恢复原活动文档失败: {exRestore.Message}")
+                End Try
+            End If
+
             If _plotEngine.CancellationPending Then
                 _plotEngine.CancellationPending = False
                 MessageBox.Show($"多文档打印已取消，已处理 {processedFiles}/{totalFiles} 个文件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
             Else
-                MessageBox.Show($"多文档打印任务已完成！共处理 {totalFiles} 个文件。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Dim layoutHint As String = If(radBatchCreateLayout.Checked, "（批量生成布局模式打开的文档未自动保存，请检查后在各文档中保存布局改动）", "")
+                MessageBox.Show($"多文档打印任务已完成！共处理 {processedFiles} 个文件。{layoutHint}", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
             End If
 
             ' 清空多文档文件列表
@@ -2619,6 +2694,8 @@ End Sub
         Catch ex As Exception
             ClosePlotProgress()
             MessageBox.Show("多文档打印失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            ' 异常中断同样清空，避免下次点"确定"意外重启整批多文档打印
+            If _multiDocFiles IsNot Nothing Then _multiDocFiles.Clear()
         End Try
     End Sub
 
@@ -2636,13 +2713,7 @@ End Sub
                 End If
             Next
 
-            ' DocumentCollection.Open 为 2015+ 托管 API；旧版（如 2014）无此成员，反射调用保持全版本可编译
-            Dim openMethod = GetType(DocumentCollection).GetMethod("Open", New Type() {GetType(String), GetType(Boolean)})
-            If openMethod Is Nothing Then
-                Debug.WriteLine("当前 CAD 版本不支持托管方式打开文档")
-                Return Nothing
-            End If
-            Return CType(openMethod.Invoke(docMgr, New Object() {filePath, False}), Document)
+            Return docMgr.Open(filePath, False)
         Catch ex As Exception
             Debug.WriteLine($"打开文档失败: {ex.Message}")
             Return Nothing
@@ -2780,16 +2851,21 @@ End Sub
     End Sub
 
     ' 获取实际输出路径
-    Private Function GetActualOutputPath() As String
+    ' dwgPath：按指定 DWG 路径推导（多文档侧库模式活动文档仍是启动文档，必须按当前文件推导）；
+    '          缺省用当前活动文档
+    Private Function GetActualOutputPath(Optional dwgPath As String = Nothing) As String
         Try
-            Dim doc As Document = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
-            If doc Is Nothing Then
-                Return txtSavePath.Text
+            Dim dwgFullPath As String = dwgPath
+            If String.IsNullOrEmpty(dwgFullPath) Then
+                Dim doc As Document = Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument
+                If doc Is Nothing Then
+                    Return txtSavePath.Text
+                End If
+                dwgFullPath = doc.Name
             End If
 
-            Dim dwgPath As String = doc.Name
-            Dim dwgDir As String = Path.GetDirectoryName(dwgPath)
-            Dim dwgName As String = Path.GetFileNameWithoutExtension(dwgPath)
+            Dim dwgDir As String = Path.GetDirectoryName(dwgFullPath)
+            Dim dwgName As String = Path.GetFileNameWithoutExtension(dwgFullPath)
 
             If radSourcePathPDF.Checked Then
                 ' 源文件路径\PDF
@@ -2892,9 +2968,14 @@ End Sub
                 cmbPreset.Items.Add(preset)
             Next
 
-            ' 恢复之前的选择
+            ' 恢复之前的选择（抑制事件，避免返回管理窗口后立刻重载预设并弹提示）
             If Not String.IsNullOrEmpty(currentSelection) AndAlso cmbPreset.Items.Contains(currentSelection) Then
-                cmbPreset.SelectedItem = currentSelection
+                _suppressPresetEvent = True
+                Try
+                    cmbPreset.SelectedItem = currentSelection
+                Finally
+                    _suppressPresetEvent = False
+                End Try
             End If
         Catch ex As Exception
             MessageBox.Show("刷新预设列表失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -3360,6 +3441,18 @@ End Sub
             lblOffsetY.Enabled = False
         End If
 
+        ' 全启用→按模式禁用后，radio 的 Checked 未变不会触发联动事件，需补调联动刷新；
+        ' 但仅在该模式允许相应分组启用时调用，避免把刚被模式禁用的控件重新启用
+        '（拆分归档/打印已有布局会禁用这些分组，直接跳过；保存路径仅"打印到文件"允许自选）
+        If radDirectPlot.Checked OrElse radPlotToFile.Checked OrElse radBatchCreateLayout.Checked Then
+            UpdateFrameTypeControls()
+            UpdateOffsetControls()
+            UpdateScaleControls()
+        End If
+        If radPlotToFile.Checked Then
+            UpdateSavePathControls()
+        End If
+
         ' 更新预览和确定按钮状态
         UpdatePreviewAndOKButtons()
     End Sub
@@ -3373,8 +3466,9 @@ End Sub
             btnPreview.Enabled = False
             btnOK.Enabled = True
         ElseIf radDirectPlot.Checked OrElse radPlotToFile.Checked OrElse radSplitArchive.Checked OrElse radBatchCreateLayout.Checked Then
-            ' 这些模式需要选中图框才启用预览和确定
-            Dim hasFrames As Boolean = (_frames IsNot Nothing AndAlso _frames.Count > 0)
+            ' 这些模式需要选中图框（或多文档文件）才启用预览和确定
+            Dim hasFrames As Boolean = (_frames IsNot Nothing AndAlso _frames.Count > 0) OrElse
+                                        (_multiDocFiles IsNot Nothing AndAlso _multiDocFiles.Count > 0)
             btnPreview.Enabled = hasFrames
             btnOK.Enabled = hasFrames
         Else
@@ -3759,14 +3853,14 @@ End Sub
     ' 输出类型改变时更新扩展名
     Private Sub RadSourcePathPDF_CheckedChanged(sender As Object, e As EventArgs) Handles radSourcePathPDF.CheckedChanged
         If radSourcePathPDF.Checked Then
-            txtSavePath.Text = GetActualOutputPath()
+            ' 不覆盖 txtSavePath：源文件路径模式下该输入被禁用，
+            ' 保留用户在"其他路径"下填写的自定义路径
             UpdateSavePathControls()
         End If
     End Sub
 
     Private Sub RadSourcePathDWF_CheckedChanged(sender As Object, e As EventArgs) Handles radSourcePathDWF.CheckedChanged
         If radSourcePathDWF.Checked Then
-            txtSavePath.Text = GetActualOutputPath()
             UpdateSavePathControls()
         End If
     End Sub

@@ -30,6 +30,9 @@ Public Class MultiDocForm
     Private _files As List(Of String)
     Private _selectedFiles As List(Of String)
     Private _initialSelectedFiles As List(Of String)  ' 传入的已选择文件
+    ' 勾选"打开的文档"时自动添加到已选列表的条目（忽略大小写），
+    ' 取消勾选时只移除这些条目，不动用户手动添加的同名文件
+    Private _autoAddedOpenDocs As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
 
     Public ReadOnly Property SelectedFiles As List(Of String)
         Get
@@ -354,13 +357,18 @@ Public Class MultiDocForm
         End If
     End Sub
 
+    ' 已选列表是否已包含该路径（Windows 路径不区分大小写，判重须忽略大小写）
+    Private Function IsSelectedFile(filePath As String) As Boolean
+        Return _selectedFiles.Any(Function(s) String.Equals(s, filePath, StringComparison.OrdinalIgnoreCase))
+    End Function
+
     Private Sub BtnAdd_Click(sender As Object, e As EventArgs) Handles btnAdd.Click
         ' 从左侧列表添加到右侧列表
         For Each selectedIndex As Integer In lstFiles.SelectedIndices
             Dim filePath As String = _files(selectedIndex)
             Dim fileName As String = Path.GetFileName(filePath)
 
-            If Not _selectedFiles.Contains(filePath) Then
+            If Not IsSelectedFile(filePath) Then
                 _selectedFiles.Add(filePath)
                 lstSelectedFiles.Items.Add(fileName)
             End If
@@ -432,23 +440,18 @@ Public Class MultiDocForm
         End If
     End Sub
 
-    ' 从右侧已选列表移除所有当前打开的文档（与勾选时的自动追加相对应）
+    ' 从右侧已选列表移除勾选"打开的文档"时自动添加的条目（与勾选时的自动追加相对应）
     Private Sub RemoveOpenDocumentsFromSelected()
         Try
             For i As Integer = _selectedFiles.Count - 1 To 0 Step -1
-                Dim isOpen As Boolean = False
-                For Each doc As Autodesk.AutoCAD.ApplicationServices.Document In
-                    Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager
-                    If String.Equals(doc.Name, _selectedFiles(i), StringComparison.OrdinalIgnoreCase) Then
-                        isOpen = True
-                        Exit For
-                    End If
-                Next
-                If isOpen Then
+                ' 只移除自动添加的条目，用户手动添加的同名文件保留
+                If _autoAddedOpenDocs.Contains(_selectedFiles(i)) Then
                     _selectedFiles.RemoveAt(i)
                     lstSelectedFiles.Items.RemoveAt(i)
                 End If
             Next
+            ' 移除后同步清理集合
+            _autoAddedOpenDocs.Clear()
         Catch ex As Exception
             Debug.WriteLine("移除打开的文档失败: " & ex.Message)
         End Try
@@ -466,7 +469,7 @@ Public Class MultiDocForm
                     Dim fileName As String = Path.GetFileName(filePath)
 
                     ' 如果还没有选择此文件，则添加到右侧列表
-                    If Not _selectedFiles.Contains(filePath) Then
+                    If Not IsSelectedFile(filePath) Then
                         ' 先添加到左侧列表（如果不在）
                         If Not _files.Contains(filePath) Then
                             _files.Add(filePath)
@@ -476,6 +479,8 @@ Public Class MultiDocForm
                         ' 添加到右侧已选列表
                         _selectedFiles.Add(filePath)
                         lstSelectedFiles.Items.Add(fileName)
+                        ' 记录为自动添加的条目，取消勾选时据此精确移除
+                        _autoAddedOpenDocs.Add(filePath)
                     End If
                 End If
             Next

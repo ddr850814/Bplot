@@ -11,3 +11,6 @@ obj/
 AcCoreMgd.dll
 AcDbMgd.dll
 AcMgd.dll
+
+# Test logs
+plot.log

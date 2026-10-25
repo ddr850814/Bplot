@@ -243,7 +243,16 @@ Public Class PreviewAllForm
         lblStatus.Text = $"共 {_imagePaths.Count} 个图框，成功生成 {successCount} 个预览  |  点击选中，双击预览"
     End Sub
 
+    ' 上次卡片单击时间：双击的第二次 Click 落在系统双击间隔内，跳过翻转避免选中状态被多翻一次
+    Private _lastCardClickTime As DateTime = DateTime.MinValue
+
     Private Sub ToggleSelect(index As Integer)
+        Dim now As DateTime = DateTime.Now
+        Dim isSecondClickOfDoubleClick As Boolean =
+            (now - _lastCardClickTime).TotalMilliseconds < SystemInformation.DoubleClickTime
+        _lastCardClickTime = now
+        If isSecondClickOfDoubleClick Then Return
+
         If _selectedIndices.Contains(index) Then
             _selectedIndices.Remove(index)
         Else

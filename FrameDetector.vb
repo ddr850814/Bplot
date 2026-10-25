@@ -61,6 +61,7 @@ Public Class FrameDetector
                                 frameInfo.Bounds = extents
                                 frameInfo.FrameNumber = $"Frame_{frameIndex:D3}"
                                 frameInfo.OrderIndex = frameIndex
+                                frameInfo.OriginalIndex = frameIndex
                                 frames.Add(frameInfo)
                             End If
                         End If
@@ -94,6 +95,10 @@ Public Class FrameDetector
                         If objId.ObjectClass.DxfName <> "INSERT" Then Continue For
                         Dim br = TryCast(tr.GetObject(objId, OpenMode.ForRead), BlockReference)
                         If br Is Nothing Then Continue For
+
+                        ' 外部参照（XREF，块名形如 "底图|Model"）不是图框块，跳过
+                        Dim ownerBtr = TryCast(tr.GetObject(br.BlockTableRecord, OpenMode.ForRead), BlockTableRecord)
+                        If ownerBtr IsNot Nothing AndAlso ownerBtr.IsFromExternalReference Then Continue For
 
                         ' 动态块须解析原始定义名，匿名名（*U###）无匹配意义
                         Dim blockName As String = br.Name
@@ -158,16 +163,20 @@ Public Class FrameDetector
                             Dim bounds As Extents3d
                             If TypeOf entity Is Polyline Then
                                 Dim pl = CType(entity, Polyline)
-                                If Not pl.Closed OrElse pl.NumberOfVertices <> 4 Then Continue For
+                                If Not pl.Closed Then Continue For
+                                If Not IsValidRectangleVertexCount(pl.NumberOfVertices, pl.GetPoint3dAt(0), pl.GetPoint3dAt(pl.NumberOfVertices - 1)) Then Continue For
                                 bounds = pl.GeometricExtents
                             ElseIf TypeOf entity Is Polyline2d Then
                                 Dim pl2d = CType(entity, Polyline2d)
                                 If Not pl2d.Closed Then Continue For
-                                Dim vertexCount = 0
-                                For Each vid As ObjectId In pl2d
-                                    vertexCount += 1
+                                ' 顶点计数只认 Vertex2d（与 TryGetStraightOpenPolylineSegment 口径一致，排除 SequenceEnd 等子对象）
+                                Dim vertices As New List(Of Vertex2d)()
+                                For Each vertexId As ObjectId In pl2d
+                                    Dim vertex = TryCast(tr.GetObject(vertexId, OpenMode.ForRead, False), Vertex2d)
+                                    If vertex IsNot Nothing Then vertices.Add(vertex)
                                 Next
-                                If vertexCount <> 4 Then Continue For
+                                If vertices.Count = 0 Then Continue For
+                                If Not IsValidRectangleVertexCount(vertices.Count, vertices(0).Position, vertices(vertices.Count - 1).Position) Then Continue For
                                 bounds = pl2d.GeometricExtents
                             Else
                                 Continue For
@@ -247,6 +256,7 @@ Public Class FrameDetector
                         frameInfo.Bounds = rect.Bounds
                         frameInfo.FrameNumber = $"Frame_{frameIndex:D3}"
                         frameInfo.OrderIndex = frameIndex
+                        frameInfo.OriginalIndex = frameIndex
 
                         ' 记录四条边对应的源对象（同一实体可能被拆为多条线段，去重）
                         Dim usedIds As New HashSet(Of ObjectId)()
@@ -280,6 +290,13 @@ Public Class FrameDetector
         End Try
     End Function
 
+    ' 判断闭合多段线顶点数是否构成矩形：4 顶点，或 5 顶点且首尾点重复（首尾点重合容差 0.01 图面单位）
+    Private Shared Function IsValidRectangleVertexCount(count As Integer, firstPoint As Point3d, lastPoint As Point3d) As Boolean
+        If count = 4 Then Return True
+        If count = 5 Then Return firstPoint.DistanceTo(lastPoint) < 0.01
+        Return False
+    End Function
+
     ' 记录一条多段线图框
     Private Sub AddPolylineFrame(frames As List(Of BatchPlotEngine.FrameInfo), objId As ObjectId, layoutName As String, bounds As Extents3d, ByRef frameIndex As Integer)
         Dim frameInfo As New BatchPlotEngine.FrameInfo()
@@ -289,6 +306,7 @@ Public Class FrameDetector
         frameInfo.Bounds = bounds
         frameInfo.FrameNumber = $"Frame_{frameIndex:D3}"
         frameInfo.OrderIndex = frameIndex
+        frameInfo.OriginalIndex = frameIndex
         frames.Add(frameInfo)
     End Sub
 
@@ -436,6 +454,7 @@ Public Class FrameDetector
 
         For i = 0 To result.Count - 1
             result(i).OrderIndex = i + 1
+            result(i).OriginalIndex = i + 1
             result(i).FrameNumber = $"Frame_{i + 1:D3}"
         Next
 

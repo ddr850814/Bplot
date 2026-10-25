@@ -36,7 +36,7 @@ Public Class BatchPlotEngine
     End Property
 
     ' 进入外部侧库模式：加载目标文件并切换引擎的检测/打印目标库（失败抛异常由调用方跳过该文件）
-    ' 同步切换 WorkingDatabase：2014 等版本 PlotInfoValidator/PlotEngine 以工作库判断"当前布局"，
+    ' 同步切换 WorkingDatabase：PlotInfoValidator/PlotEngine 以工作库判断"当前布局"，
     ' 不切换会对侧库布局报 eLayoutNotCurrent/eInvalidPlotInfo
     Public Sub BeginExternalPlot(filePath As String)
         Dim sideDb As New Database(False, True)
@@ -67,10 +67,15 @@ Public Class BatchPlotEngine
             End Try
             _externalDb = Nothing
             _externalName = ""
-            _db = _doc.Database
-            _frameDetector = New FrameDetector(_db)
-            HostApplicationServices.WorkingDatabase = _doc.Database
-            _logger.Info("已退出外部侧库打印模式")
+            Try
+                _db = _doc.Database
+                _frameDetector = New FrameDetector(_db)
+                HostApplicationServices.WorkingDatabase = _doc.Database
+                _logger.Info("已退出外部侧库打印模式")
+            Catch ex As Exception
+                ' 原文档可能已被关闭；恢复失败只记日志，不能掩盖调用方正在传播的原始异常
+                _logger.Warning($"退出侧库模式时恢复当前文档引用失败: {ex.Message}")
+            End Try
         End If
     End Sub
 
@@ -113,9 +118,9 @@ Public Class BatchPlotEngine
             _doc = Application.DocumentManager.MdiActiveDocument
             If _doc IsNot Nothing Then
                 _db = _doc.Database
-                If _frameDetector Is Nothing Then
-                    _frameDetector = New FrameDetector(_db)
-                End If
+                ' 无条件重建检测器：旧检测器仍绑定上一个文档的 Database，
+                ' 多文档循环切换文档后会检测到旧图纸的图框
+                _frameDetector = New FrameDetector(_db)
             End If
         Catch ex As Exception
             _logger.Error("更新当前文档失败", ex)
@@ -237,6 +242,8 @@ Public Class BatchPlotEngine
         Public Property FrameNumber As String
         Public Property IsSelected As Boolean = True
         Public Property OrderIndex As Integer = 0
+        ' 检测时的原始顺序（不被 OrderFrames 覆盖），作为"选择顺序"排序的稳定基准
+        Public Property OriginalIndex As Integer = 0
     End Class
 
 #End Region
@@ -380,8 +387,12 @@ Public Class BatchPlotEngine
                     If Not layoutId.IsNull Then
                         Dim layout = CType(tr.GetObject(layoutId, OpenMode.ForRead), Layout)
                         Dim plotSettings As New Autodesk.AutoCAD.DatabaseServices.PlotSettings(layout.ModelType)
-                        plotSettings.CopyFrom(layout)
-                        Return plotSettings.PlotConfigurationName
+                        Try
+                            plotSettings.CopyFrom(layout)
+                            Return plotSettings.PlotConfigurationName
+                        Finally
+                            plotSettings.Dispose()
+                        End Try
                     End If
                 End If
                 tr.Commit()
@@ -399,11 +410,15 @@ Public Class BatchPlotEngine
             Using tr As Transaction = _db.TransactionManager.StartTransaction()
                 Dim psv As PlotSettingsValidator = PlotSettingsValidator.Current
                 Dim ps As New Autodesk.AutoCAD.DatabaseServices.PlotSettings(True)
-                psv.SetPlotConfigurationName(ps, plotterName, Nothing)
-                Dim mediaList As Specialized.StringCollection = psv.GetCanonicalMediaNameList(ps)
-                If mediaList.Count > 0 Then
-                    Return psv.GetLocaleMediaName(ps, 0)
-                End If
+                Try
+                    psv.SetPlotConfigurationName(ps, plotterName, Nothing)
+                    Dim mediaList As Specialized.StringCollection = psv.GetCanonicalMediaNameList(ps)
+                    If mediaList.Count > 0 Then
+                        Return psv.GetLocaleMediaName(ps, 0)
+                    End If
+                Finally
+                    ps.Dispose()
+                End Try
                 tr.Commit()
             End Using
         Catch ex As Exception
@@ -459,16 +474,20 @@ Public Class BatchPlotEngine
             Using tr As Transaction = _db.TransactionManager.StartTransaction()
                 Dim psv As PlotSettingsValidator = PlotSettingsValidator.Current
                 Dim ps As New Autodesk.AutoCAD.DatabaseServices.PlotSettings(True)
-                psv.SetPlotConfigurationName(ps, plotterName, Nothing)
+                Try
+                    psv.SetPlotConfigurationName(ps, plotterName, Nothing)
 
-                Dim mediaList As Specialized.StringCollection = psv.GetCanonicalMediaNameList(ps)
+                    Dim mediaList As Specialized.StringCollection = psv.GetCanonicalMediaNameList(ps)
 
-                For i = 0 To mediaList.Count - 1
-                    Dim canonicalName As String = mediaList(i)
-                    Dim localeName As String = psv.GetLocaleMediaName(ps, i)
-                    papers.Add(localeName)
-                    _paperNameMap(localeName) = canonicalName
-                Next
+                    For i = 0 To mediaList.Count - 1
+                        Dim canonicalName As String = mediaList(i)
+                        Dim localeName As String = psv.GetLocaleMediaName(ps, i)
+                        papers.Add(localeName)
+                        _paperNameMap(localeName) = canonicalName
+                    Next
+                Finally
+                    ps.Dispose()
+                End Try
 
                 tr.Commit()
             End Using
@@ -604,7 +623,11 @@ Public Class BatchPlotEngine
                 Dim layoutDict = CType(tr.GetObject(_db.LayoutDictionaryId, OpenMode.ForRead), DBDictionary)
                 For Each entry As DBDictionaryEntry In layoutDict
                     If entry.Key <> "Model" Then
-                        layouts.Add(entry.Key)
+                        ' 返回 LayoutName（查找端按布局名匹配）；个别图纸字典键与布局名不一致
+                        Dim lay = TryCast(tr.GetObject(entry.Value, OpenMode.ForRead), Layout)
+                        If lay IsNot Nothing Then
+                            layouts.Add(lay.LayoutName)
+                        End If
                     End If
                 Next
                 tr.Commit()
@@ -643,12 +666,31 @@ Public Class BatchPlotEngine
         PlotToDeviceWithCopies(frames, settings, progressCallback)
     End Sub
 
+    ' 同步设置打印戳记开关（Editor.Command 同步执行，当批打印即生效）
+    Private Sub SetPlotStampEnabled(enabled As Boolean)
+        Using lock As DocumentLock = _doc.LockDocument()
+            If enabled Then
+                _doc.Editor.Command("_-PLOTSTAMP", "On", "")
+                _logger.Info("已同步启用打印戳记")
+            Else
+                _doc.Editor.Command("_-PLOTSTAMP", "Off", "")
+                _logger.Info("已同步禁用打印戳记")
+            End If
+        End Using
+    End Sub
+
 
     ' 执行批量打印任务，支持直接打印和打印到文件
     ' 使用PlotEngine后台打印方式，每个图框作为独立打印任务
     Private Sub PlotToDeviceWithCopies(frames As List(Of FrameInfo), settings As PlotSettings, progressCallback As Action(Of Integer, String))
         ' 保存原始系统变量值
         Dim oldBackgroundPlot As Object = Nothing
+        ' 记录起始布局：打印过程中会反复切换布局，结束后恢复用户原有视图状态
+        Dim originalLayout As String = Nothing
+        Try
+            originalLayout = LayoutManager.Current.CurrentLayout
+        Catch
+        End Try
 
         Try
             If frames Is Nothing OrElse frames.Count = 0 Then
@@ -708,16 +750,7 @@ Public Class BatchPlotEngine
             ' 根据设置启用或禁用打印戳记
             Try
                 Using lock As DocumentLock = _doc.LockDocument()
-                    Dim plotStampScript As String
-                    If settings.PlotStamp Then
-                        plotStampScript = "_-PLOTSTAMP" & vbCr & "On" & vbCr & vbCr
-                        _logger.Info("启用打印戳记功能")
-                    Else
-                        plotStampScript = "_-PLOTSTAMP" & vbCr & "Off" & vbCr & vbCr
-                        _logger.Info("禁用打印戳记功能")
-                    End If
-                    _doc.SendStringToExecute(plotStampScript, True, False, False)
-                    Threading.Thread.Sleep(500)
+                    SetPlotStampEnabled(settings.PlotStamp)
                 End Using
             Catch ex As Exception
                 _logger.Warning($"设置打印戳记状态失败: {ex.Message}")
@@ -764,9 +797,13 @@ Public Class BatchPlotEngine
                         End If
 
                         ' 为单个图框执行独立打印任务（mapping 非空时内部覆盖设备/纸张）
-                        PrintSingleFrame(frame, settings, i + 1, totalFrames, copy, settings.Copies, outputFilePath, mapping)
-
-                        _logger.Info($"图框 {frame.FrameNumber} 第{copy}份: 独立打印任务完成")
+                        ' 单个图框失败只跳过该图框，不中断整批打印
+                        Try
+                            PrintSingleFrame(frame, settings, i + 1, totalFrames, copy, settings.Copies, outputFilePath, mapping)
+                            _logger.Info($"图框 {frame.FrameNumber} 第{copy}份: 独立打印任务完成")
+                        Catch ex As Exception
+                            _logger.Error($"图框 {frame.FrameNumber} 第{copy}份打印失败，跳过继续: {ex.Message}", ex)
+                        End Try
                     Next
                 Next
                 If cancelled Then
@@ -815,9 +852,13 @@ Public Class BatchPlotEngine
                         End If
 
                         ' 为单个图框执行独立打印任务（mapping 非空时内部覆盖设备/纸张）
-                        PrintSingleFrame(frame, settings, i + 1, totalFrames, copy, settings.Copies, outputFilePath, mapping)
-
-                        _logger.Info($"图框 {frame.FrameNumber} 第{copy}份: 独立打印任务完成")
+                        ' 单个图框失败只跳过该图框，不中断整批打印
+                        Try
+                            PrintSingleFrame(frame, settings, i + 1, totalFrames, copy, settings.Copies, outputFilePath, mapping)
+                            _logger.Info($"图框 {frame.FrameNumber} 第{copy}份: 独立打印任务完成")
+                        Catch ex As Exception
+                            _logger.Error($"图框 {frame.FrameNumber} 第{copy}份打印失败，跳过继续: {ex.Message}", ex)
+                        End Try
                     Next
                 Next
                 If cancelled Then
@@ -841,6 +882,16 @@ Public Class BatchPlotEngine
             Catch ex As Exception
                 _logger.Warning($"恢复 BACKGROUNDPLOT 失败: {ex.Message}")
             End Try
+            ' 恢复打印前的当前布局（侧库模式不经过布局切换，跳过）
+            If Not IsExternalPlotMode AndAlso Not String.IsNullOrEmpty(originalLayout) Then
+                Try
+                    If LayoutManager.Current.CurrentLayout <> originalLayout Then
+                        LayoutManager.Current.CurrentLayout = originalLayout
+                    End If
+                Catch ex As Exception
+                    _logger.Warning($"恢复原布局 '{originalLayout}' 失败: {ex.Message}")
+                End Try
+            End If
         End Try
     End Sub
 
@@ -906,31 +957,35 @@ Public Class BatchPlotEngine
 
                     ' 创建PlotSettings并配置
                     Dim ps As New Autodesk.AutoCAD.DatabaseServices.PlotSettings(layout.ModelType)
-                    ps.CopyFrom(layout)
-                    ConfigurePlotSettings(ps, frame, frameSettings)
+                    Dim pi As PlotInfo = Nothing
+                    Try
+                        ps.CopyFrom(layout)
+                        ConfigurePlotSettings(ps, frame, frameSettings)
 
-                    ' 创建PlotInfo
-                    Dim pi As New PlotInfo()
-                    pi.Layout = layoutId
-                    pi.OverrideSettings = ps
+                        ' 创建PlotInfo
+                        pi = New PlotInfo()
+                        pi.Layout = layoutId
+                        pi.OverrideSettings = ps
 
-                    ' 验证打印信息
-                    Using piv As New PlotInfoValidator()
-                        piv.MediaMatchingPolicy = MatchingPolicy.MatchEnabled
-                        Try
-                            piv.Validate(pi)
-                        Catch ex As Exception
-                            _logger.Warning($"PlotInfo验证警告: {ex.Message}")
-                        End Try
-                    End Using
+                        ' 验证打印信息
+                        Using piv As New PlotInfoValidator()
+                            piv.MediaMatchingPolicy = MatchingPolicy.MatchEnabled
+                            Try
+                                piv.Validate(pi)
+                            Catch ex As Exception
+                                _logger.Warning($"PlotInfo验证警告: {ex.Message}")
+                            End Try
+                        End Using
 
-                    ' 执行打印（异常时自动逐级清理引擎状态）
-                    RunPlotEngineSafely(pi, layoutName, outputFilePath)
+                        ' 执行打印（异常时自动逐级清理引擎状态）
+                        RunPlotEngineSafely(pi, layoutName, outputFilePath)
 
-                    ps.Dispose()
-                    pi.Dispose()
-
-                    tr.Commit()
+                        tr.Commit()
+                    Finally
+                        ' 异常路径也必须释放非驻库对象
+                        pi?.Dispose()
+                        ps.Dispose()
+                    End Try
                 End Using
             Finally
                 docLock?.Dispose()
@@ -1218,24 +1273,26 @@ Public Class BatchPlotEngine
 
                     ' 创建PlotSettings并配置
                     Dim ps As New Autodesk.AutoCAD.DatabaseServices.PlotSettings(layout.ModelType)
-                    ps.CopyFrom(layout)
+                    Dim pi As PlotInfo = Nothing
+                    Try
+                        ps.CopyFrom(layout)
 
-                    ' 预览同样遵循块-纸张映射，保证预览与实际打印一致
-                    Dim frameSettings As PlotSettings = settings
-                    Dim mapping = BlockPaperStore.ResolveForBlock(BlockPaperStore.LoadAllLists(), frame.BlockName, settings.PlotterName)
-                    If mapping IsNot Nothing Then
-                        frameSettings = CloneSettingsWithDevice(settings, mapping.PlotDevice, mapping.PaperSize)
-                    End If
+                        ' 预览同样遵循块-纸张映射，保证预览与实际打印一致
+                        Dim frameSettings As PlotSettings = settings
+                        Dim mapping = BlockPaperStore.ResolveForBlock(BlockPaperStore.LoadAllLists(), frame.BlockName, settings.PlotterName)
+                        If mapping IsNot Nothing Then
+                            frameSettings = CloneSettingsWithDevice(settings, mapping.PlotDevice, mapping.PaperSize)
+                        End If
 
-                    ConfigurePlotSettings(ps, frame, frameSettings)
+                        ConfigurePlotSettings(ps, frame, frameSettings)
 
-                    ' 注意：不要将预览的页面设置应用到共享布局
-                    ' 这会导致多个预览之间的冲突
+                        ' 注意：不要将预览的页面设置应用到共享布局
+                        ' 这会导致多个预览之间的冲突
 
-                    ' 创建PlotInfo
-                    Dim pi As New PlotInfo()
-                    pi.Layout = layoutId
-                    pi.OverrideSettings = ps
+                        ' 创建PlotInfo
+                        pi = New PlotInfo()
+                        pi.Layout = layoutId
+                        pi.OverrideSettings = ps
 
                     ' 验证打印信息
                     Using piv As New PlotInfoValidator()
@@ -1280,10 +1337,12 @@ Public Class BatchPlotEngine
                         End Try
                     End Using
 
-                    ps.Dispose()
-                    pi.Dispose()
-
-                    tr.Commit()
+                        tr.Commit()
+                    Finally
+                        ' 异常路径也必须释放非驻库对象
+                        pi?.Dispose()
+                        ps.Dispose()
+                    End Try
                 End Using
             End Using
         Catch ex As Exception
@@ -1375,6 +1434,7 @@ Public Class BatchPlotEngine
                     psv.SetPlotCentered(plotSettings, True)
                 Else
                     psv.SetPlotCentered(plotSettings, False)
+                    psv.SetPlotOrigin(plotSettings, New Point2d(settings.OffsetX, settings.OffsetY))
                 End If
             End If
         Catch ex As Exception
@@ -1583,8 +1643,12 @@ Public Class BatchPlotEngine
             If isFrameLandscape <> isPaperLandscape Then
                 rotation = PlotRotation.Degrees090
             End If
+        Else
+            ' 关闭自动旋转：按用户设置的图纸方向（横向）决定 0/90 度
+            If settings.IsLandscape Then
+                rotation = PlotRotation.Degrees090
+            End If
         End If
-        ' 关闭自动旋转时，使用纸张默认方向（0度），不做任何旋转
 
         ' 如果设置了反向，则在当前旋转基础上再旋转180度
         If settings.Reverse Then
@@ -1613,7 +1677,9 @@ Public Class BatchPlotEngine
         Dim oldFileDia As Object = Nothing
         Try
             Dim count = 0
-            Dim total As Integer = frames.Count
+            ' 进度分母用选中图框数（count 只累计选中项），避免进度条到不了 100%
+            Dim total As Integer = frames.Where(Function(f) f.IsSelected).Count()
+            If total = 0 Then total = 1
 
             ' 保存当前 FILEDIA 设置并禁用文件对话框
             Try
@@ -1624,6 +1690,11 @@ Public Class BatchPlotEngine
             End Try
 
             For Each frame As FrameInfo In frames
+                ' 用户取消：停止拆分归档
+                If CancellationPending Then
+                    _logger.Info("用户取消，停止拆分归档")
+                    Exit For
+                End If
                 If Not frame.IsSelected Then Continue For
 
                 count += 1
@@ -1637,8 +1708,11 @@ Public Class BatchPlotEngine
 
                 Try
                     ' 整库克隆后在克隆库中删除图框外对象（保留穿框图元与完整图纸结构）
-                    CreateSplitFile(frame, outputFile)
-                    _logger.Info($"图纸拆分成功: {outputFile}")
+                    If CreateSplitFile(frame, outputFile) Then
+                        _logger.Info($"图纸拆分成功: {outputFile}")
+                    Else
+                        _logger.Warning($"图框 {frame.FrameNumber} 未生成拆分文件（图框内无对象）: {outputFile}")
+                    End If
                 Catch ex As Exception
                     _logger.Error($"拆分图框 {frame.FrameNumber} 失败", ex)
                 End Try
@@ -1649,13 +1723,13 @@ Public Class BatchPlotEngine
             _logger.Error("图纸拆分归档失败", ex)
             Throw New Exception("图纸拆分归档失败: " & ex.Message)
         Finally
-            ' 恢复 FILEDIA 设置（含异常路径）
+            ' 恢复 FILEDIA 设置（含异常路径；不恢复会禁用 CAD 全部文件对话框直到重启）
             Try
                 If oldFileDia IsNot Nothing Then
                     SetSystemVariableChecked("FILEDIA", oldFileDia)
                 End If
-            Catch
-                ' 忽略恢复失败
+            Catch ex As Exception
+                _logger.Warning($"恢复 FILEDIA 失败（文件对话框可能被禁用，可手动执行 FILEDIA=1 恢复）: {ex.Message}")
             End Try
         End Try
     End Sub
@@ -1663,7 +1737,7 @@ Public Class BatchPlotEngine
     ''' <summary>
     ''' 整库克隆后删除图框外对象并另存（保留穿框图元与完整图纸结构）
     ''' </summary>
-    Private Sub CreateSplitFile(frame As FrameInfo, outputFile As String)
+    Private Function CreateSplitFile(frame As FrameInfo, outputFile As String) As Boolean
         Dim docLock As DocumentLock = Nothing
         Try
             ' 侧库模式目标库不是文档，无需文档锁
@@ -1731,7 +1805,7 @@ Public Class BatchPlotEngine
 
                 If keptCount = 0 Then
                     _logger.Warning($"图框 {frame.FrameNumber} 内没有找到对象，跳过保存")
-                    Return
+                    Return False
                 End If
 
                 ' 确保输出目录存在
@@ -1742,11 +1816,12 @@ Public Class BatchPlotEngine
 
                 ' 保存拆分结果（使用源文件版本）
                 sideDb.SaveAs(outputFile, _db.OriginalFileVersion)
+                Return True
             End Using
         Finally
             docLock?.Dispose()
         End Try
-    End Sub
+    End Function
 
     ''' <summary>
     ''' 获取拆分目标空间的 ObjectId（按图框所在布局名，失败回退模型空间）
@@ -1758,10 +1833,14 @@ Public Class BatchPlotEngine
             If frame IsNot Nothing AndAlso Not String.IsNullOrEmpty(frame.LayoutName) Then
                 For Each btId As ObjectId In bt
                     Dim btr = TryCast(tr.GetObject(btId, OpenMode.ForRead), BlockTableRecord)
-                    If btr IsNot Nothing AndAlso btr.IsLayout AndAlso
-                       String.Equals(btr.Name, frame.LayoutName, StringComparison.OrdinalIgnoreCase) Then
-                        tr.Commit()
-                        Return btId
+                    If btr IsNot Nothing AndAlso btr.IsLayout AndAlso Not btr.LayoutId.IsNull Then
+                        ' 布局图框的块表记录名是 *Paper_Space，必须经 Layout.LayoutName 比较
+                        Dim lay = TryCast(tr.GetObject(btr.LayoutId, OpenMode.ForRead), Layout)
+                        If lay IsNot Nothing AndAlso
+                           String.Equals(lay.LayoutName, frame.LayoutName, StringComparison.OrdinalIgnoreCase) Then
+                            tr.Commit()
+                            Return btId
+                        End If
                     End If
                 Next
             End If
@@ -1787,9 +1866,17 @@ Public Class BatchPlotEngine
         ' 系统变量保存/恢复必须覆盖异常路径：异常后不恢复会永久改变图纸线型显示
         Dim originalLtScale As Object = Nothing
         Dim originalPsLtScale As Object = Nothing
+        ' 记录起始布局：创建过程会反复切换布局激活，结束后恢复用户原有视图状态
+        Dim originalLayout As String = Nothing
+        Try
+            originalLayout = LayoutManager.Current.CurrentLayout
+        Catch
+        End Try
         Try
             Dim count = 0
-            Dim total As Integer = frames.Count
+            ' 进度分母用选中图框数（count 只累计选中项）
+            Dim total As Integer = frames.Where(Function(f) f.IsSelected).Count()
+            If total = 0 Then total = 1
 
             originalLtScale = Application.GetSystemVariable("LTSCALE")
             originalPsLtScale = Application.GetSystemVariable("PSLTSCALE")
@@ -1797,6 +1884,11 @@ Public Class BatchPlotEngine
             ' 锁定文档以避免 eLockViolation 错误
             Using docLock As DocumentLock = _doc.LockDocument()
                 For Each frame As FrameInfo In frames
+                    ' 用户取消：停止生成布局
+                    If CancellationPending Then
+                        _logger.Info("用户取消，停止批量生成布局")
+                        Exit For
+                    End If
                     If Not frame.IsSelected Then Continue For
 
                     count += 1
@@ -1867,6 +1959,16 @@ Public Class BatchPlotEngine
             Catch
                 ' 忽略恢复失败
             End Try
+            ' 恢复生成布局前的当前布局，避免用户停留在最后一个新建布局上
+            If Not String.IsNullOrEmpty(originalLayout) Then
+                Try
+                    If LayoutManager.Current.CurrentLayout <> originalLayout Then
+                        LayoutManager.Current.CurrentLayout = originalLayout
+                    End If
+                Catch ex As Exception
+                    _logger.Warning($"恢复原布局 '{originalLayout}' 失败: {ex.Message}")
+                End Try
+            End If
         End Try
     End Sub
 
@@ -2095,7 +2197,9 @@ Public Class BatchPlotEngine
         Dim units = CInt(Application.GetSystemVariable("INSUNITS"))
         Dim unitFactor = 1.0
         Select Case units
-            Case 0, 1 ' 无单位或英寸
+            Case 0 ' 无单位：按毫米处理（国内图纸惯例），避免视口尺寸被错误缩放
+                unitFactor = 1.0 ' 转换为毫米
+            Case 1 ' 英寸
                 unitFactor = 25.4 ' 转换为毫米
             Case 4 ' 毫米
                 unitFactor = 1.0
@@ -2108,15 +2212,15 @@ Public Class BatchPlotEngine
         Dim viewportUnitFactor = 1.0
         
         ' 根据主窗口设置计算视口比例
-        ' needScale = 模型空间单位 / 图纸空间单位（即打印比例的倒数）
-        ' 例如 1:100 时 needScale = 0.01，表示图纸空间1单位 = 模型空间100单位
+        ' needScale = 打印比例（图纸空间单位 / 模型空间单位）
+        ' 例如 1:100 时 needScale = 0.01，表示模型空间 100 单位对应图纸空间 1 单位
         Dim needScale As Double
         Select Case settings.PlotScale
             Case PlotScaleType.FitToPaper
                 needScale = 0
             Case PlotScaleType.AutoScale
-                ' AutoScale 使用取整后的标准比例
-                needScale = 1.0 / scaleFactor
+                ' AutoScale 使用取整后的标准比例（scaleFactor 即 1:n 比值，如 1:100 = 0.01）
+                needScale = scaleFactor
             Case PlotScaleType.FixedScale
                 needScale = 1.0 / settings.FixedScale
             Case Else
@@ -2166,28 +2270,27 @@ Public Class BatchPlotEngine
         If paperUnitFactor = 0 Then paperUnitFactor = 1.0
         
         If needScale = 0 Then
+            ' 布满图纸：视口铺满可打印区域
             viewportWidth = Math.Max(printableWidth / paperUnitFactor, 1.0)
             viewportHeight = Math.Max(printableHeight / paperUnitFactor, 1.0)
-            ' 同时考虑 XY 两个方向，取较大比例，确保图框不超出视口
-            Dim ratioX As Double = frameWidth / (printableWidth / paperUnitFactor)
-            Dim ratioY As Double = frameHeight / (printableHeight / paperUnitFactor)
-            viewHeight = Math.Max(Math.Max(ratioX, ratioY), 1.0)
+            ' 模型空间视图高度（模型单位）：按视口宽高比完整显示图框
+            Dim ratioX As Double = frameWidth / Math.Max(viewportWidth, 0.001)
+            Dim ratioY As Double = frameHeight / Math.Max(viewportHeight, 0.001)
+            viewHeight = Math.Max(Math.Max(ratioX, ratioY) * viewportHeight, 1.0)
         Else
-            viewportWidth = Math.Max(frameWidth * needScale / unitFactor * paperUnitFactor, 1.0)
-            viewportHeight = Math.Max(frameHeight * needScale / unitFactor * paperUnitFactor, 1.0)
-            ' 同时考虑 XY 两个方向
-            Dim actualW As Double = frameWidth * needScale / unitFactor * paperUnitFactor
-            Dim actualH As Double = frameHeight * needScale / unitFactor * paperUnitFactor
-            Dim ratioX As Double = frameWidth / Math.Max(actualW, 0.001)
-            Dim ratioY As Double = frameHeight / Math.Max(actualH, 0.001)
-            viewHeight = Math.Max(Math.Max(ratioX, ratioY) * Math.Max(frameHeight, 1.0), 1.0)
+            ' 精确比例：视口纸面尺寸 = 图框尺寸 * 打印比例
+            ' 模型值 * needScale 得毫米纸面值，再除 paperUnitFactor 换算为布局图纸单位
+            Dim modelToPaper As Double = needScale * unitFactor / paperUnitFactor
+            viewportWidth = Math.Max(frameWidth * modelToPaper, 1.0)
+            viewportHeight = Math.Max(frameHeight * modelToPaper, 1.0)
+            ' 模型空间视图高度 = 图框高度（模型单位），按精确比例完整显示
+            viewHeight = Math.Max(frameHeight, 1.0)
         End If
-        
+
         If needTwist Then
-            ' 旋转时交换宽高考虑
-            Dim ratioX As Double = frameHeight / (viewportWidth)
-            Dim ratioY As Double = frameWidth / (viewportHeight)
-            viewHeight = Math.Max(Math.Max(ratioX, ratioY) * Math.Max(frameHeight, 1.0), 1.0)
+            ' 旋转 90 度：图框宽高互换后仍需完整可见，按视口宽高比重算视图高度
+            viewHeight = Math.Max(frameWidth, frameHeight * viewportHeight / Math.Max(viewportWidth, 0.001))
+            viewHeight = Math.Max(viewHeight, 1.0)
         End If
         
         Dim viewportCenterX As Double = (printableWidth / 2) / paperUnitFactor
@@ -2392,7 +2495,9 @@ Public Class BatchPlotEngine
 
                     ' 创建PlotSettings并从布局复制（保留布局原有设置）
                     Dim ps As New Autodesk.AutoCAD.DatabaseServices.PlotSettings(layout.ModelType)
-                    ps.CopyFrom(layout)
+                    Dim pi As PlotInfo = Nothing
+                    Try
+                        ps.CopyFrom(layout)
 
                     ' 仅在用户明确指定时才覆盖布局设置
                     Dim psv As PlotSettingsValidator = PlotSettingsValidator.Current
@@ -2447,7 +2552,7 @@ Public Class BatchPlotEngine
                     End If
 
                     ' 创建PlotInfo
-                    Dim pi As New PlotInfo()
+                    pi = New PlotInfo()
                     pi.Layout = layoutId
                     pi.OverrideSettings = ps
 
@@ -2464,9 +2569,12 @@ Public Class BatchPlotEngine
                     ' 执行打印（异常时自动逐级清理引擎状态）
                     RunPlotEngineSafely(pi, layoutName, Nothing)
 
-                    ps.Dispose()
-                    pi.Dispose()
-                    tr.Commit()
+                        tr.Commit()
+                    Finally
+                        ' 异常路径也必须释放非驻库对象
+                        pi?.Dispose()
+                        ps.Dispose()
+                    End Try
                 End Using
             Finally
                 docLock?.Dispose()
@@ -2500,7 +2608,16 @@ Public Class BatchPlotEngine
 
     ' 排序图框：先按布局分组，再在组内做带状空间排序
     Public Sub OrderFrames(frames As List(Of FrameInfo), orderType As PlotOrderType, reverse As Boolean)
-        If orderType <> PlotOrderType.SelectOrder Then
+        If orderType = PlotOrderType.SelectOrder Then
+            ' 选择顺序：按检测时的原始顺序（OriginalIndex）稳定排序，保证幂等——
+            ' OrderIndex 会被每次调用重写为本次结果，用它做基准会"预览→打印"来回翻转。
+            ' 未经过检测流程的列表（OriginalIndex 全 0）退回按 OrderIndex 比较
+            frames.Sort(Function(a, b)
+                            Dim c = a.OriginalIndex.CompareTo(b.OriginalIndex)
+                            If c = 0 Then c = a.OrderIndex.CompareTo(b.OrderIndex)
+                            Return c
+                        End Function)
+        Else
             Dim groups = GroupFramesByLayout(frames)
             For Each group In groups
                 SortFramesSpatially(group, orderType)
@@ -2515,8 +2632,14 @@ Public Class BatchPlotEngine
             frames.Reverse()
         End If
 
+        Dim selectedNo As Integer = 0
         For i = 0 To frames.Count - 1
             frames(i).OrderIndex = i + 1
+            ' 按最终打印顺序同步重编号 FrameNumber，使图上序号/预览卡片/输出文件名一致
+            If frames(i).IsSelected Then
+                selectedNo += 1
+                frames(i).FrameNumber = $"Frame_{selectedNo:D3}"
+            End If
         Next
     End Sub
 
@@ -2657,7 +2780,8 @@ Public Class BatchPlotEngine
     End Class
 
     ' 处理重名文件
-    Private Function HandleDuplicateFile(filePath As String, handling As DuplicateFileHandling) As String
+    ' 处理重名输出文件：覆盖=原路径；跳过=空串；自动顺延=名称(1)、名称(2)...
+    Public Function HandleDuplicateFile(filePath As String, handling As DuplicateFileHandling) As String
         If Not File.Exists(filePath) Then
             Return filePath
         End If
@@ -2801,7 +2925,12 @@ Public Class BatchPlotEngine
                     Dim br = TryCast(tr.GetObject(objId, OpenMode.ForRead), BlockReference)
                     If br Is Nothing Then Continue For
 
-                    Dim btr = TryCast(tr.GetObject(br.BlockTableRecord, OpenMode.ForRead), BlockTableRecord)
+                    ' 动态块实例的 BlockTableRecord 是匿名 *U###（跨文档不匹配），须取定义名比较
+                    Dim defId As ObjectId = br.BlockTableRecord
+                    If br.IsDynamicBlock AndAlso Not br.DynamicBlockTableRecord.IsNull Then
+                        defId = br.DynamicBlockTableRecord
+                    End If
+                    Dim btr = TryCast(tr.GetObject(defId, OpenMode.ForRead), BlockTableRecord)
                     If btr Is Nothing OrElse Not String.Equals(btr.Name, blockName, StringComparison.OrdinalIgnoreCase) Then Continue For
 
                     Dim extents As Extents3d
@@ -2949,9 +3078,13 @@ Public Class BatchPlotEngine
         If frame IsNot Nothing AndAlso Not String.IsNullOrEmpty(frame.LayoutName) Then
             For Each btId As ObjectId In bt
                 Dim btr = TryCast(tr.GetObject(btId, OpenMode.ForRead), BlockTableRecord)
-                If btr IsNot Nothing AndAlso btr.IsLayout AndAlso
-                   String.Equals(btr.Name, frame.LayoutName, StringComparison.OrdinalIgnoreCase) Then
-                    Return btId
+                If btr IsNot Nothing AndAlso btr.IsLayout AndAlso Not btr.LayoutId.IsNull Then
+                    ' 布局图框的块表记录名是 *Paper_Space，必须经 Layout.LayoutName 比较
+                    Dim lay = TryCast(tr.GetObject(btr.LayoutId, OpenMode.ForRead), Layout)
+                    If lay IsNot Nothing AndAlso
+                       String.Equals(lay.LayoutName, frame.LayoutName, StringComparison.OrdinalIgnoreCase) Then
+                        Return btId
+                    End If
                 End If
             Next
         End If
@@ -3259,17 +3392,9 @@ Public Class BatchPlotEngine
         If frames Is Nothing OrElse frames.Count = 0 Then Return imagePaths
 
         Dim pngPlotter As String = "PublishToWeb PNG.pc3"
-        Dim tempDir As String = Path.Combine(Path.GetTempPath(), "BatchPlotVB_Preview")
-        If Not Directory.Exists(tempDir) Then
-            Directory.CreateDirectory(tempDir)
-        End If
-
-        ' 清理旧预览文件
-        Try
-            For Each oldFile In Directory.GetFiles(tempDir, "*.png")
-                Try : File.Delete(oldFile) : Catch : End Try
-            Next
-        Catch : End Try
+        ' 每次调用使用独立子目录：共享目录会在连续/并发预览时互删对方正在使用的临时文件
+        Dim tempDir As String = Path.Combine(Path.GetTempPath(), "BatchPlotVB_Preview", Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(tempDir)
 
         ' 保存原始系统变量
         Dim oldBackgroundPlot As Object = Nothing
@@ -3312,8 +3437,10 @@ Public Class BatchPlotEngine
 
                             ' 复用完整的打印设置配置（包含纸张、比例、旋转、居中、打印样式等）
                             Dim ps As New Autodesk.AutoCAD.DatabaseServices.PlotSettings(layout.ModelType)
-                            ps.CopyFrom(layout)
-                            ConfigurePlotSettings(ps, frame, settings)
+                            Dim pi As PlotInfo = Nothing
+                            Try
+                                ps.CopyFrom(layout)
+                                ConfigurePlotSettings(ps, frame, settings)
 
                             ' 最后将打印机替换为 PNG 输出（覆盖用户选择的打印机）
                             Dim psv As PlotSettingsValidator = PlotSettingsValidator.Current
@@ -3392,7 +3519,7 @@ Public Class BatchPlotEngine
                                 End If
                             Catch : End Try
 
-                            Dim pi As New PlotInfo()
+                            pi = New PlotInfo()
                             pi.Layout = layoutId
                             pi.OverrideSettings = ps
 
@@ -3408,9 +3535,12 @@ Public Class BatchPlotEngine
                             ' 使用发布引擎打印到 PNG 文件（异常时自动逐级清理引擎状态）
                             RunPlotEngineSafely(pi, layoutName, imgPath)
 
-                            ps.Dispose()
-                            pi.Dispose()
-                            tr.Commit()
+                                tr.Commit()
+                            Finally
+                                ' 异常路径也必须释放非驻库对象
+                                pi?.Dispose()
+                                ps.Dispose()
+                            End Try
                         End Using
                     End Using
 
@@ -3435,22 +3565,24 @@ Public Class BatchPlotEngine
                 If oldBackgroundPlot IsNot Nothing Then
                     SetSystemVariableChecked("BACKGROUNDPLOT", CInt(oldBackgroundPlot))
                 End If
-            Catch : End Try
+            Catch ex As Exception
+                _logger.Warning($"恢复 BACKGROUNDPLOT 失败: {ex.Message}")
+            End Try
         End Try
 
         Return imagePaths
     End Function
 
-    ' 清理预览临时文件
+    ' 清理预览临时文件（含各次调用生成的子目录；调用方需先释放图片对象）
     Public Sub CleanupPreviewImages()
         Try
-            Dim tempDir As String = Path.Combine(Path.GetTempPath(), "BatchPlotVB_Preview")
-            If Directory.Exists(tempDir) Then
-                For Each f In Directory.GetFiles(tempDir, "*.png")
-                    Try : File.Delete(f) : Catch : End Try
-                Next
+            Dim tempRoot As String = Path.Combine(Path.GetTempPath(), "BatchPlotVB_Preview")
+            If Directory.Exists(tempRoot) Then
+                Directory.Delete(tempRoot, True)
             End If
-        Catch : End Try
+        Catch ex As Exception
+            _logger.Warning($"清理预览临时文件失败: {ex.Message}")
+        End Try
     End Sub
 
 #End Region

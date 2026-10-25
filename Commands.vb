@@ -7,6 +7,9 @@ Imports Autodesk.AutoCAD.Runtime
 
 Public Class Commands
 
+    ' 主窗体已打开实例：BatchPlot/BPlot 单例防护，避免重复执行打开多实例导致双份打印
+    Private Shared _mainForm As MainForm
+
     <CommandMethod("BatchPlot")>
     Public Sub BatchPlotCommand()
         Try
@@ -16,8 +19,14 @@ Public Class Commands
                 Return
             End If
 
-            Dim frm As New MainForm()
-            frm.Show()
+            ' 已有未销毁实例则激活已有窗口返回，不再新开
+            If _mainForm IsNot Nothing AndAlso Not _mainForm.IsDisposed Then
+                _mainForm.Activate()
+                Return
+            End If
+
+            _mainForm = New MainForm()
+            _mainForm.Show()
 
         Catch ex As System.Exception
             MessageBox.Show("启动批量打印失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -115,8 +124,8 @@ Public Class Commands
     End Function
 
     Private Sub CreateBoundingBoxForCommand(db As Database, bounds As Extents3d, tr As Transaction, offsetDist As Double)
-        Dim bt = CType(tr.GetObject(db.BlockTableId, OpenMode.ForRead), BlockTable)
-        Dim modelSpace = CType(tr.GetObject(bt(BlockTableRecord.ModelSpace), OpenMode.ForWrite), BlockTableRecord)
+        ' 写入当前空间对应的块表记录（模型或布局），避免布局空间选择对象时画到模型空间错误位置
+        Dim currentSpace = CType(tr.GetObject(db.CurrentSpaceId, OpenMode.ForWrite), BlockTableRecord)
 
         ' 应用偏移距离
         Dim minX As Double = bounds.MinPoint.X - offsetDist
@@ -132,7 +141,7 @@ Public Class Commands
         pl.Closed = True
         pl.Layer = "0"
 
-        modelSpace.AppendEntity(pl)
+        currentSpace.AppendEntity(pl)
         tr.AddNewlyCreatedDBObject(pl, True)
     End Sub
 

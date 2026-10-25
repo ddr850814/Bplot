@@ -107,15 +107,37 @@ Public Class AutoCADPathResolver
         Next
     End Sub
 
+    ' 注册表版本号(Rmajor.minor) -> 年份 显式映射表：以 major*10+minor 作为组合键，
+    ' 避免 R24.0/R24.1/R24.2 被旧公式 2000+CInt(版本) 全部误算成同一年后互相合并
+    Private Shared ReadOnly s_releaseYearMap As New Dictionary(Of Integer, Integer) From {
+        {23 * 10 + 0, 2019},
+        {23 * 10 + 1, 2020},
+        {24 * 10 + 0, 2021},
+        {24 * 10 + 1, 2022},
+        {24 * 10 + 2, 2023},
+        {24 * 10 + 3, 2024},
+        {25 * 10 + 0, 2025}
+    }
+
     Private Shared Function ExtractVersionFromKey(keyName As String) As String
-        ' 例如 "R24.3" -> "2024"
+        ' 例如 "R24.3" -> "2024"：拆出 major/minor 按组合键查显式映射表
         If keyName.StartsWith("R") Then
-            Dim versionNum As Double
-            If Double.TryParse(keyName.Substring(1), versionNum) Then
-                ' R24.x 对应 2024
-                Return (2000 + CInt(versionNum)).ToString()
+            Dim parts() As String = keyName.Substring(1).Split("."c)
+            Dim major As Integer, minor As Integer
+            If parts.Length >= 1 AndAlso Integer.TryParse(parts(0), major) Then
+                minor = 0
+                If parts.Length >= 2 Then
+                    Dim minorNum As Integer
+                    If Integer.TryParse(parts(1), minorNum) Then minor = minorNum
+                End If
+                Dim year As Integer
+                ' 缓存键由映射表按 minor 区分（不同 minor 对应不同年份），不再互相合并
+                If s_releaseYearMap.TryGetValue(major * 10 + minor, year) Then
+                    Return year.ToString()
+                End If
             End If
         End If
+        ' 未知版本原样返回键名（含 minor，天然不合并）
         Return keyName
     End Function
 

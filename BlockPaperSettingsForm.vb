@@ -24,6 +24,8 @@ Public Class BlockPaperSettingsForm
     Private _plotEngine As BatchPlotEngine
     ' 保存的列表集合：列表名称 -> 该列表下的所有设置
     Private _savedLists As Dictionary(Of String, List(Of BlockPaperSetting))
+    ' 当前加载到编辑区的列表名（切换前用于对比未保存修改）
+    Private _currentListName As String
 
     Public Class BlockPaperSetting
         Public Property BlockName As String
@@ -209,7 +211,7 @@ Public Class BlockPaperSettingsForm
             Next
         Catch ex As Exception
             Debug.WriteLine("加载已保存列表失败: " & ex.Message)
-            _savedLists = New Dictionary(Of String, List(Of BlockPaperSetting))()
+            _savedLists = New Dictionary(Of String, List(Of BlockPaperSetting))(StringComparer.OrdinalIgnoreCase)
         End Try
     End Sub
 
@@ -281,15 +283,50 @@ Public Class BlockPaperSettingsForm
         Try
             Dim listName As String = cmbBlockList.Text.Trim()
             If String.IsNullOrEmpty(listName) Then Return
+            ' 选回当前列表（如用户取消切换后的回退）无需再检查
+            If String.Equals(listName, _currentListName, StringComparison.OrdinalIgnoreCase) Then Return
+
+            ' 切换前若有未保存修改，提示确认
+            If HasUnsavedChanges() Then
+                If MessageBox.Show("当前列表有未保存的修改，切换将丢失，是否继续？", "确认", MessageBoxButtons.YesNo, MessageBoxIcon.Question) = DialogResult.No Then
+                    ' 选回原列表（再次触发的本事件会因列表名相同直接返回）
+                    Dim idx As Integer = cmbBlockList.FindStringExact(_currentListName)
+                    If idx >= 0 Then
+                        cmbBlockList.SelectedIndex = idx
+                    Else
+                        cmbBlockList.Text = _currentListName
+                    End If
+                    Return
+                End If
+            End If
 
             If _savedLists.ContainsKey(listName) Then
                 _settings = New List(Of BlockPaperSetting)(_savedLists(listName))
                 RefreshListView()
             End If
+            _currentListName = listName
         Catch ex As Exception
             Debug.WriteLine("加载列表内容失败: " & ex.Message)
         End Try
     End Sub
+
+    ' 判断当前编辑内容与已保存列表是否有差异（数量不同或任一条目不同）
+    Private Function HasUnsavedChanges() As Boolean
+        Dim saved As List(Of BlockPaperSetting) = Nothing
+        If Not String.IsNullOrEmpty(_currentListName) AndAlso _savedLists.TryGetValue(_currentListName, saved) Then
+            If _settings.Count <> saved.Count Then Return True
+            For i = 0 To _settings.Count - 1
+                If _settings(i).PlotDevice <> saved(i).PlotDevice OrElse
+                   _settings(i).PaperSize <> saved(i).PaperSize OrElse
+                   _settings(i).BlockName <> saved(i).BlockName Then
+                    Return True
+                End If
+            Next
+            Return False
+        End If
+        ' 无对应已保存列表时：只要有编辑内容即视为有修改
+        Return _settings.Count > 0
+    End Function
 
     ' 刷新列表视图
     Private Sub RefreshListView()
@@ -305,16 +342,25 @@ Public Class BlockPaperSettingsForm
     Private Sub BtnSave_Click(sender As Object, e As EventArgs) Handles btnSave.Click
         Try
             Dim listName As String = cmbBlockList.Text.Trim()
+            ' 有编辑内容但未指定列表名：提示并留在窗体，避免静默丢弃编辑
+            If String.IsNullOrEmpty(listName) AndAlso _settings.Count > 0 Then
+                MessageBox.Show("请先输入或选择列表名", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                DialogResult = DialogResult.None
+                Return
+            End If
+
             If Not String.IsNullOrEmpty(listName) Then
                 If _settings.Count > 0 Then
                     _savedLists(listName) = New List(Of BlockPaperSetting)(_settings)
                     If Not cmbBlockList.Items.Contains(listName) Then
                         cmbBlockList.Items.Add(listName)
                     End If
+                    _currentListName = listName
                 ElseIf _savedLists.ContainsKey(listName) Then
                     ' 当前列表已清空则同步删除
                     _savedLists.Remove(listName)
                     cmbBlockList.Items.Remove(listName)
+                    _currentListName = ""
                 End If
             End If
             SaveAllLists()
@@ -346,6 +392,7 @@ Public Class BlockPaperSettingsForm
             End If
 
             SaveAllLists()
+            _currentListName = listName
             MessageBox.Show($"列表 '{listName}' 已保存", "提示", MessageBoxButtons.OK, MessageBoxIcon.Information)
         Catch ex As Exception
             MessageBox.Show("保存列表失败: " & ex.Message, "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -460,6 +507,7 @@ Public Class BlockPaperSettingsForm
                         _savedLists.Remove(listName)
                         cmbBlockList.Items.Remove(listName)
                         cmbBlockList.Text = ""
+                        _currentListName = ""
                         SaveAllLists()
                     End If
                 End If
@@ -510,7 +558,8 @@ Public Module BlockPaperStore
 
     ' 从配置文件加载所有映射列表
     Public Function LoadAllLists() As Dictionary(Of String, List(Of BlockPaperSettingsForm.BlockPaperSetting))
-        Dim lists As New Dictionary(Of String, List(Of BlockPaperSettingsForm.BlockPaperSetting))()
+        ' 列表名忽略大小写，避免同名不同大小写的列表被当成两个
+        Dim lists As New Dictionary(Of String, List(Of BlockPaperSettingsForm.BlockPaperSetting))(StringComparer.OrdinalIgnoreCase)
         Try
             If File.Exists(ConfigFilePath) Then
                 Dim lines() As String = File.ReadAllLines(ConfigFilePath)
@@ -543,7 +592,7 @@ Public Module BlockPaperStore
         Return lists
     End Function
 
-    ' 保存所有映射列表到配置文件
+    ' 保存所有映射列表到配置文件（原子写，避免写一半失败把配置写坏）
     Public Sub SaveAllLists(lists As Dictionary(Of String, List(Of BlockPaperSettingsForm.BlockPaperSetting)))
         Try
             Dim dir As String = Path.GetDirectoryName(ConfigFilePath)
@@ -551,18 +600,50 @@ Public Module BlockPaperStore
                 Directory.CreateDirectory(dir)
             End If
 
-            Using writer As New StreamWriter(ConfigFilePath, False)
-                For Each kvp In lists
-                    If kvp.Value.Count = 0 Then Continue For
-                    writer.WriteLine("[" & kvp.Key & "]")
-                    For Each setting In kvp.Value
-                        writer.WriteLine(setting.BlockName & "|" & setting.PlotDevice & "|" & setting.PaperSize)
-                    Next
-                    writer.WriteLine()
+            Dim sb As New System.Text.StringBuilder()
+            For Each kvp In lists
+                If kvp.Value.Count = 0 Then Continue For
+                sb.AppendLine("[" & kvp.Key & "]")
+                For Each setting In kvp.Value
+                    sb.AppendLine(setting.BlockName & "|" & setting.PlotDevice & "|" & setting.PaperSize)
                 Next
-            End Using
+                sb.AppendLine()
+            Next
+
+            WriteTextAtomic(ConfigFilePath, sb.ToString())
         Catch ex As Exception
             Debug.WriteLine("保存块-纸张映射失败: " & ex.Message)
+        End Try
+    End Sub
+
+    ' 原子写入：先写同目录随机临时文件，再 File.Replace/Move 换入；
+    ' 目标被占用时退避重试，仍失败则兜底覆盖复制，避免写坏配置
+    Private ReadOnly s_retryDelaysMs As Integer() = {50, 100, 200}
+
+    Private Sub WriteTextAtomic(filePath As String, contents As String)
+        Dim directory As String = Path.GetDirectoryName(filePath)
+        Dim tempPath As String = Path.Combine(directory, Path.GetRandomFileName())
+        Try
+            File.WriteAllText(tempPath, contents)
+            For attempt = 0 To s_retryDelaysMs.Length
+                If attempt > 0 Then System.Threading.Thread.Sleep(s_retryDelaysMs(attempt - 1))
+                Try
+                    If File.Exists(filePath) Then
+                        File.Replace(tempPath, filePath, filePath & ".bak", True)
+                    Else
+                        File.Move(tempPath, filePath)
+                    End If
+                    Return
+                Catch
+                End Try
+            Next
+            ' 重试窗口内始终无法换入：直接覆盖复制（失败时异常交给调用方）
+            File.Copy(tempPath, filePath, True)
+        Finally
+            Try
+                If File.Exists(tempPath) Then File.Delete(tempPath)
+            Catch
+            End Try
         End Try
     End Sub
 
@@ -576,7 +657,8 @@ Public Module BlockPaperStore
         Dim list As List(Of BlockPaperSettingsForm.BlockPaperSetting) = Nothing
         If lists.TryGetValue(blockName, list) AndAlso list IsNot Nothing Then
             For Each setting In list
-                If setting.PlotDevice = plotDevice Then
+                ' 打印设备名忽略大小写比较（同一设备不同大小写写法应视为相同）
+                If String.Equals(setting.PlotDevice, plotDevice, StringComparison.OrdinalIgnoreCase) Then
                     Return setting
                 End If
             Next

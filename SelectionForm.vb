@@ -15,7 +15,7 @@ Public Class SelectionForm
         End Get
     End Property
 
-    Public Sub New(title As String, items As List(Of String))
+    Public Sub New(title As String, items As List(Of String), Optional multiSelect As Boolean = True)
         AutoScaleDimensions = New SizeF(6.0F, 12.0F)
         AutoScaleMode = AutoScaleMode.Font
         Text = title
@@ -29,7 +29,11 @@ Public Class SelectionForm
         lstItems = New ListBox()
         lstItems.Location = New Point(12, 12)
         lstItems.Size = New Size(280, 340)
-        lstItems.SelectionMode = SelectionMode.MultiExtended
+        If multiSelect Then
+            lstItems.SelectionMode = SelectionMode.MultiExtended
+        Else
+            lstItems.SelectionMode = SelectionMode.One
+        End If
         lstItems.Sorted = True
         Controls.Add(lstItems)
 
